@@ -1,0 +1,1022 @@
+<style>html,body{background:#0d1117!important;margin:0;padding:0}*{box-sizing:border-box;margin:0;padding:0}#mdb{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#0d1117;min-height:100vh;color:#c9d1d9;padding:20px 28px;position:relative;left:50%;right:50%;margin-left:-50vw;margin-right:-50vw;width:100vw}#mdb .hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 0 18px;border-bottom:1px solid #21262d;margin-bottom:20px;flex-wrap:wrap;gap:10px}#mdb .hdr h1{font-size:20px;font-weight:600;color:#f0f6fc;display:flex;align-items:center;gap:10px}#mdb .dot{width:9px;height:9px;background:#3fb950;border-radius:50%;animation:mdPulse 2s infinite;flex-shrink:0}@keyframes mdPulse{0%,100%{opacity:1}50%{opacity:.4}}#mdb .hdr-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#mdb .ts{font-size:12px;color:#6e7681}#mdb .tabs{display:flex;gap:3px;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:4px}#mdb .tab-btn{background:transparent;border:none;border-radius:6px;padding:7px 18px;font-size:13px;color:#8b949e;cursor:pointer;font-family:inherit;white-space:nowrap}#mdb .tab-btn.on{background:#21262d;color:#f0f6fc}#mdb .tab-pane{display:none}#mdb .tab-pane.show{display:block}#mdb .btn{background:#21262d;border:1px solid #30363d;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px;color:#c9d1d9;display:inline-flex;align-items:center;gap:6px;font-family:inherit}#mdb .btn:hover{background:#30363d;color:#f0f6fc}#mdb .btn-blue{background:#1f6feb;border-color:#388bfd;color:#fff}#mdb .btn-blue:hover{background:#388bfd}#mdb .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}#mdb .mc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 16px}#mdb .mc-l{font-size:12px;color:#8b949e;margin-bottom:5px}#mdb .mc-v{font-size:26px;font-weight:600;color:#f0f6fc}#mdb .mc-s{font-size:12px;color:#6e7681;margin-top:3px}#mdb .filters{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap;align-items:center}#mdb .pill{font-size:12.5px;padding:5px 12px;border-radius:20px;border:1px solid #30363d;cursor:pointer;color:#8b949e;background:transparent;white-space:nowrap;font-family:inherit;user-select:none}#mdb .pill.on{background:#21262d;color:#f0f6fc;border-color:#58a6ff}#mdb .srch{flex:1;min-width:140px;max-width:220px;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 11px;font-size:13px;color:#c9d1d9;outline:none;font-family:inherit}#mdb .srch:focus{border-color:#58a6ff}#mdb .tbl-wrap{background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:auto;max-height:64vh}#mdb table{width:100%;border-collapse:collapse;font-size:13px}#mdb th{font-weight:500;color:#8b949e;font-size:12px;padding:10px 14px;border-bottom:1px solid #21262d;text-align:left;white-space:nowrap;background:#161b22;position:sticky;top:0;z-index:1}#mdb td{padding:9px 14px;border-bottom:1px solid #21262d;white-space:nowrap;color:#c9d1d9;vertical-align:middle}#mdb tr:last-child td{border-bottom:none}#mdb tr:hover td{background:#1c2128}#mdb .badge{display:inline-block;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px}#mdb .b-gr{background:rgba(63,185,80,.15);color:#3fb950}#mdb .b-r{background:rgba(248,81,73,.15);color:#f85149}#mdb .b-a{background:rgba(210,153,34,.15);color:#d2a20a}#mdb .b-gy{background:rgba(110,118,129,.15);color:#8b949e}#mdb .b-bl{background:rgba(56,139,253,.15);color:#58a6ff}#mdb .b-p{background:rgba(188,140,255,.15);color:#bc8cff}#mdb .b-o{background:rgba(255,123,114,.15);color:#ff7b72}#mdb .ld{text-align:center;padding:44px;color:#6e7681;font-size:14px}#mdb .spin{display:inline-block;width:15px;height:15px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:mdSpin .8s linear infinite;vertical-align:-3px;margin-right:6px}@keyframes mdSpin{to{transform:rotate(360deg)}}#mdb .alert-box{background:rgba(248,81,73,.1);border-left:3px solid #f85149;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#ffa198;margin-bottom:14px}#mdb .setup-box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:32px;max-width:500px;margin:48px auto;text-align:center}#mdb .setup-box h2{color:#f0f6fc;font-size:17px;margin-bottom:10px}#mdb .setup-box p{color:#8b949e;font-size:13px;margin-bottom:20px;line-height:1.6}#mdb .setup-inp{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:11px 13px;font-size:13px;color:#c9d1d9;outline:none;font-family:monospace;margin-bottom:12px}#mdb .setup-inp:focus{border-color:#58a6ff}#mdb .cbo-info{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 18px;margin-bottom:14px;font-size:13px;color:#8b949e;line-height:1.7}#mdb .cbo-info strong{color:#f0f6fc}#mdb .cbo-inp{width:100px;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:13px;color:#c9d1d9;text-align:right;font-family:inherit}#mdb .cbo-inp:focus{outline:none;border-color:#58a6ff}#mdb .cbo-date{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:12px;color:#c9d1d9;font-family:inherit;cursor:pointer;width:136px}#mdb .cbo-date:focus{outline:none;border-color:#58a6ff}#mdb .save-btn{background:#1f6feb;border:1px solid #388bfd;border-radius:5px;padding:6px 12px;font-size:12px;color:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}#mdb .save-btn:hover{background:#388bfd}#mdb .save-btn:disabled{background:#21262d;border-color:#30363d;color:#6e7681;cursor:not-allowed}#mdb .d-good{color:#3fb950;font-weight:600;font-size:13px}#mdb .d-warn{color:#d2a20a;font-weight:600;font-size:13px}#mdb .d-bad{color:#f85149;font-weight:600;font-size:13px}#mdb .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9999;display:none;align-items:center;justify-content:center}#mdb .modal-bg.show{display:flex}#mdb .modal{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:22px;min-width:320px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto}#mdb .modal h2{font-size:15px;font-weight:600;color:#f0f6fc;margin-bottom:8px}#mdb .modal p{font-size:12px;color:#8b949e;margin-bottom:14px;line-height:1.5}#mdb .modal h3{font-size:13px;color:#8b949e;margin:16px 0 8px;border-top:1px solid #21262d;padding-top:12px}#mdb .tk-row{display:flex;align-items:center;gap:7px;margin-bottom:9px}#mdb .tk-inp{flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:12px;color:#c9d1d9;outline:none;font-family:monospace}#mdb .tk-inp:focus{border-color:#58a6ff}#mdb .tk-rm{background:none;border:none;color:#f85149;cursor:pointer;font-size:17px;line-height:1;padding:0 4px}#mdb .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}#mdb .foot-note{margin-top:10px;display:flex;justify-content:space-between;font-size:11px;color:#6e7681;flex-wrap:wrap;gap:4px}#mdb .th-group{background:#0d1117;font-size:10px;color:#6e7681;text-transform:uppercase;letter-spacing:.5px}#mdb .period-bar{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+@media (max-width:768px){
+  #mdb{padding:12px 10px}
+  #mdb .hdr{padding:8px 0 12px;margin-bottom:14px}
+  #mdb .hdr h1{font-size:16px}
+  #mdb .hdr-r{width:100%;justify-content:space-between}
+  #mdb .tabs{flex:1}
+  #mdb .tab-btn{flex:1;padding:8px 10px;text-align:center}
+  #mdb .ts{display:none}
+  #mdb .metrics{grid-template-columns:repeat(2,1fr);gap:8px}
+  #mdb .mc{padding:11px 12px}
+  #mdb .mc-v{font-size:20px}
+  #mdb .cbo-info{font-size:12px;padding:11px 13px}
+  #mdb .srch{max-width:none!important;width:100%;min-width:0}
+  #mdb .tbl-wrap{max-height:none;border-radius:8px;-webkit-overflow-scrolling:touch}
+  #mdb th,#mdb td{padding:8px 10px;font-size:12px}
+  #mdb .btn{padding:8px 12px}
+  #mdb .modal{min-width:0;width:94%}
+  #mdb .foot-note{font-size:10px}
+  /* dica de rolagem horizontal da tabela */
+  #mdb .tbl-wrap{position:relative}
+}
+@media (max-width:480px){
+  #mdb .metrics{grid-template-columns:1fr 1fr}
+  #mdb .hdr h1 .dot{display:none}
+  #mdb .period-bar span{width:100%;margin-bottom:2px}
+}</style>
+<div id="mdb">
+  <div id="alertBox" class="alert-box" style="display:none"></div>
+  <div class="hdr">
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel</h1>
+    <div class="hdr-r">
+      <div class="tabs">
+        <button class="tab-btn on" data-tab="contas">Contas</button>
+        <button class="tab-btn" data-tab="cbo">&#128197; CBO Calculator</button>
+      </div>
+      <span class="ts" id="tsLbl"></span>
+      <button class="btn" id="btnRefresh"><span id="spinIco" class="spin" style="display:none"></span>&#8635; Atualizar</button>
+      <button class="btn" id="btnTokens">&#9881; Tokens</button>
+    </div>
+  </div>
+  <div class="tab-pane show" id="tab-contas">
+    <div id="mainContent"><div class="ld"><span class="spin"></span>Iniciando...</div></div>
+  </div>
+  <div class="tab-pane" id="tab-cbo">
+    <div class="cbo-info">
+      <strong>Formula:</strong> (Orcamento Vitalicio &minus; Gasto Total) &divide; Diario Desejado = Dias Restantes &rarr; Hoje + Dias = Data de Termino<br>
+      <strong>Como usar:</strong> Preencha o campo <strong>Diario Desejado</strong> e os calculos aparecem automaticamente. Ajuste a <strong>Data Termino</strong> se quiser e clique em <strong>Aplicar</strong> para atualizar a campanha direto no Meta.
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div class="period-bar">
+        <span style="font-size:12px;color:#6e7681;margin-right:2px">Periodo:</span>
+        <button class="pill" data-period="today" id="pHoje">Hoje</button>
+        <button class="pill" data-period="yesterday" id="pOntem">Ontem</button>
+        <button class="pill on" data-period="last_7d" id="p7d">7 dias</button>
+        <button class="pill" data-period="last_30d" id="p30d">30 dias</button>
+        <button class="pill" data-period="lifetime" id="pMax">Maximo</button>
+      </div>
+      <div class="period-bar">
+        <span style="font-size:12px;color:#6e7681;margin-right:2px">Status:</span>
+        <button class="pill on" data-cbostatus="all">Todas</button>
+        <button class="pill" data-cbostatus="active">Ativas</button>
+        <button class="pill" data-cbostatus="paused">Pausadas</button>
+        <button class="pill" data-cbostatus="error">Erro</button>
+      </div>
+      <input class="srch" id="cboSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
+      <button class="btn" id="btnLoadCBO"><span id="spinCBO" class="spin" style="display:none"></span>&#8635; Carregar campanhas CBO</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2">Campanha</th>
+            <th rowspan="2">Conta</th>
+            <th rowspan="2">Status</th>
+            <th rowspan="2">Orc. Vitalicio</th>
+            <th rowspan="2">Gasto Total</th>
+            <th rowspan="2">Saldo</th>
+            <th colspan="3" class="th-group" style="text-align:center;border-left:1px solid #30363d">&#128247; Facebook</th>
+            <th colspan="10" class="th-group" style="text-align:center;border-left:1px solid #30363d">&#128200; RedTrack / Resultados</th>
+            <th rowspan="2" title="Saldo / Dias ate termino">Di&#225;rio Meta</th>
+            <th rowspan="2">Di&#225;rio Desejado</th>
+            <th rowspan="2">Sugest&#227;o Or&#231;.</th>
+            <th rowspan="2">Dias Rest.</th>
+            <th rowspan="2">Termino Calc.</th>
+            <th rowspan="2">Data Termino</th>
+            <th rowspan="2">Aplicar</th>
+          </tr>
+          <tr>
+            <th style="border-left:1px solid #30363d">Gasto</th>
+            <th>Cliques</th>
+            <th>CPC</th>
+            <th style="border-left:1px solid #30363d;cursor:pointer;user-select:none" data-sort="sales" id="thVendas">Vendas &#8645;</th>
+            <th style="cursor:pointer;user-select:none" data-sort="cpa" id="thCPA">CPA &#8645;</th>
+            <th>IC</th>
+            <th>CPI</th>
+            <th title="Vendas / Cliques">Purchase CR</th>
+            <th title="Vendas / InitiateCheckout">Conv. CO</th>
+            <th title="InitiateCheckout / Cliques">IC CR</th>
+            <th title="Vendas x $260">Faturamento</th>
+            <th style="cursor:pointer;user-select:none" data-sort="profit" id="thLucro">Lucro &#8645;</th>
+            <th style="cursor:pointer;user-select:none" data-sort="roas" id="thRoas">ROAS &#8645;</th>
+          </tr>
+        </thead>
+        <tbody id="cboTbody"><tr><td colspan="26" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="foot-note">
+    <span>Meta Graph API v21.0 &mdash; dados em tempo real</span>
+    <span id="lastUpd"></span>
+  </div>
+  <div class="modal-bg" id="settModal">
+    <div class="modal">
+      <h2>&#9881; Tokens do Meta</h2>
+      <p>Um token por perfil/Business Manager. Os tokens ficam salvos apenas no seu navegador (localStorage) e nunca aparecem no codigo da pagina.</p>
+      <div id="tkList"></div>
+      <button class="btn" id="btnAddTk" style="width:100%;margin-top:6px;justify-content:center">+ Adicionar token Meta</button>
+      <h3>&#128200; RedTrack (prioritario)</h3>
+      <p style="margin-bottom:8px">API key do RedTrack para puxar vendas, CPA, IC e CPI por campanha. Quando preenchido, e usado no lugar da Utmify.</p>
+      <div class="tk-row"><input class="tk-inp" id="rtTkInp" type="password" placeholder="API key RedTrack"></div>
+      <p style="margin-bottom:6px;font-size:11px;color:#6e7681">No RedTrack, em Conversion Types, cada tipo tem um numero. Informe o numero do tipo de VENDA (Purchase) e do InitiateCheckout. Deixe vazio para somar todas as conversoes.</p>
+      <div class="tk-row"><input class="tk-inp" id="rtPInp" type="number" min="1" max="40" placeholder="No do tipo Purchase (ex: 1)"></div>
+      <div class="tk-row"><input class="tk-inp" id="rtICInp" type="number" min="1" max="40" placeholder="No do tipo InitiateCheckout (ex: 2)"></div>
+      <h3>&#128200; Utmify (fallback)</h3>
+      <p style="margin-bottom:8px">Usado apenas se o RedTrack nao estiver configurado.</p>
+      <div class="tk-row"><input class="tk-inp" id="utmTkInp" type="password" placeholder="Token API Utmify"></div>
+      <div class="mfoot">
+        <button class="btn" id="btnModalCancel">Cancelar</button>
+        <button class="btn btn-blue" id="btnModalSave">Salvar e atualizar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  'use strict';
+  var ENG = ['PAGE_LIKES','POST_ENGAGEMENT','VIDEO_VIEWS','LINK_CLICKS','REACH','BRAND_AWARENESS','OUTCOME_ENGAGEMENT','OUTCOME_AWARENESS','EVENT_RESPONSES','MESSAGES'];
+  var SALES = ['CONVERSIONS','OUTCOME_SALES','PRODUCT_CATALOG_SALES','OUTCOME_APP_PROMOTION','APP_INSTALLS','LEAD_GENERATION','STORE_VISITS','OUTCOME_LEADS'];
+  var API = 'https://graph.facebook.com/v21.0';
+  var UTM_API = 'https://api.utmify.com.br/api-credentials/orders';
+  var RT_API = 'https://api.redtrack.io';
+  var allData = [];
+  var cboData = [];
+  var utmData = {};
+  var curF = 'all';
+  var curAcctF = 'all';
+  var curTab = 'contas';
+  var cboPeriod = 'last_7d';
+  var cboStatus = 'all';
+  var cboSort = { key: 'sales', dir: 'desc' };
+  var timer = null;
+
+  function getTks() {
+    try { var s = localStorage.getItem('md_tks'); if (s) { var a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch(e) {}
+    return [];
+  }
+  function saveTksLS(arr) { localStorage.setItem('md_tks', JSON.stringify(arr)); }
+  function getUtmTk() { try { return localStorage.getItem('utm_tk') || ''; } catch(e) { return ''; } }
+  function saveUtmTk(v) { try { if (v) localStorage.setItem('utm_tk', v); else localStorage.removeItem('utm_tk'); } catch(e) {} }
+  function getRtTk() { try { return localStorage.getItem('rt_tk') || ''; } catch(e) { return ''; } }
+  function saveRtTk(v) { try { if (v) localStorage.setItem('rt_tk', v); else localStorage.removeItem('rt_tk'); } catch(e) {} }
+  /* Padrao: Purchase = tipo 1, InitiateCheckout = tipo 2 (config do RedTrack do usuario). */
+  function getRtPType() { try { return localStorage.getItem('rt_ptype') || '1'; } catch(e) { return '1'; } }
+  function saveRtPType(v) { try { if (v) localStorage.setItem('rt_ptype', v); else localStorage.removeItem('rt_ptype'); } catch(e) {} }
+  function getRtICType() { try { return localStorage.getItem('rt_ictype') || '2'; } catch(e) { return '2'; } }
+  function saveRtICType(v) { try { if (v) localStorage.setItem('rt_ictype', v); else localStorage.removeItem('rt_ictype'); } catch(e) {} }
+  function hasConv() { return !!(getRtTk() || getUtmTk()); }
+  function setSpin(on) { var el = document.getElementById('spinIco'); if (el) el.style.display = on ? 'inline-block' : 'none'; }
+  function fj(url) { return fetch(url).then(function(r) { return r.json(); }); }
+  /* Segue paginacao do Graph API (data.paging.next) e devolve TODOS os itens. */
+  function fjPaged(url) {
+    var all = [];
+    function go(u) {
+      return fj(u).then(function(d) {
+        if (d && d.data && d.data.length) all = all.concat(d.data);
+        if (d && d.paging && d.paging.next) return go(d.paging.next);
+        return all;
+      }).catch(function(){ return all; });
+    }
+    return go(url);
+  }
+  function fmtUSD(v) {
+    if (!v || v === '0' || v === 0) return '---';
+    var n = parseFloat(v);
+    if (isNaN(n) || n === 0) return '---';
+    return '$ ' + n.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  }
+  function fmtCents(v) {
+    if (!v || v === '0' || v === 0) return '---';
+    var n = parseFloat(v) / 100;
+    if (isNaN(n) || n === 0) return '---';
+    return '$ ' + n.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  }
+  function spendVal(d) {
+    if (!d || !d.data || !d.data[0]) return 0;
+    return parseFloat(d.data[0].spend) || 0;
+  }
+  function periodLabel() {
+    var m = {today:'Hoje',yesterday:'Ontem',last_7d:'7 dias',last_30d:'30 dias',lifetime:'Maximo'};
+    return m[cboPeriod] || cboPeriod;
+  }
+  function periodDates() {
+    var now = new Date();
+    var fmt = function(d) { return d.toISOString().split('T')[0]; };
+    if (cboPeriod === 'today') { var t = fmt(now); return {since:t, until:t}; }
+    if (cboPeriod === 'yesterday') { var y = new Date(now); y.setDate(y.getDate()-1); var ys = fmt(y); return {since:ys,until:ys}; }
+    if (cboPeriod === 'last_7d') { var s7 = new Date(now); s7.setDate(s7.getDate()-7); return {since:fmt(s7),until:fmt(now)}; }
+    if (cboPeriod === 'last_30d') { var s30 = new Date(now); s30.setDate(s30.getDate()-30); return {since:fmt(s30),until:fmt(now)}; }
+    return null;
+  }
+
+  function statusBadge(s) {
+    var m = {1:'ACTIVE',2:'DISABLED',3:'UNSETTLED',7:'PENDING',9:'IN GRACE'};
+    var l = m[s] || ('S'+s);
+    if (s === 1) return '<span class="badge b-gr">'+l+'</span>';
+    if (s === 3) return '<span class="badge b-r">'+l+' &#9888;</span>';
+    if (s === 2) return '<span class="badge b-gy">'+l+'</span>';
+    return '<span class="badge b-a">'+l+'</span>';
+  }
+  function campBadge(c) {
+    if (c === 'none') return '<span class="badge b-gy">Sem campanha</span>';
+    if (c === 'engonly') return '<span class="badge b-bl">So engajamento</span>';
+    if (c === 'both') return '<span class="badge b-p">Engaj + Vendas</span>';
+    if (c === 'noeng') return '<span class="badge b-o">So vendas &#9888;</span>';
+    return '<span class="badge b-gy">---</span>';
+  }
+  /* Status da campanha CBO com deteccao de erros (effective_status + issues_info). */
+  function campStatusInfo(camp) {
+    var eff = (camp.effective_status || camp.status || '').toUpperCase();
+    var issue = '';
+    if (camp.issues_info && camp.issues_info.length) {
+      issue = camp.issues_info[0].error_message || camp.issues_info[0].error_summary || '';
+    }
+    var map = {
+      ACTIVE:       { cls:'b-gr', txt:'ACTIVE',     group:'active' },
+      PAUSED:       { cls:'b-gy', txt:'PAUSADA',    group:'paused' },
+      CAMPAIGN_PAUSED:{ cls:'b-gy', txt:'PAUSADA',  group:'paused' },
+      ADSET_PAUSED: { cls:'b-gy', txt:'PAUSADA',    group:'paused' },
+      DISAPPROVED:  { cls:'b-r',  txt:'REJEITADA',  group:'other' },
+      WITH_ISSUES:  { cls:'b-r',  txt:'COM ERRO',   group:'other' },
+      PENDING_REVIEW:{ cls:'b-a', txt:'EM REVISAO', group:'other' },
+      IN_PROCESS:   { cls:'b-a',  txt:'PROCESSANDO',group:'other' },
+      DELETED:      { cls:'b-gy', txt:'EXCLUIDA',   group:'other' },
+      ARCHIVED:     { cls:'b-gy', txt:'ARQUIVADA',  group:'other' }
+    };
+    var info = map[eff] || { cls:'b-a', txt:eff||'?', group:'other' };
+    /* Conta bloqueada / com pendencia: NAO conta como ativa, vai pro filtro Erro. */
+    if (camp._acctStatus === 2) { return { cls:'b-r', txt:'CONTA BLOQUEADA', group:'other', issue:issue || 'Conta de anuncios desabilitada', isError:true, note:'' }; }
+    if (camp._acctStatus === 3) { return { cls:'b-r', txt:'CONTA PENDENTE', group:'other', issue:issue || 'Pendencia de pagamento na conta', isError:true, note:'' }; }
+    /* Nota dos anuncios (X/Y) quando ha rejeitados ou com erro. */
+    var tot = camp._adTotal || 0, rej = camp._adRejected || 0, werr = camp._adWithErr || 0;
+    var note = '';
+    if (rej > 0) note = rej + '/' + tot + ' anuncios rejeitados';
+    else if (werr > 0) note = werr + '/' + tot + ' anuncios c/ erro';
+    var delivering = (eff === 'ACTIVE' || eff === 'WITH_ISSUES');
+    /* Campanha entregando mas com anuncio rejeitado/erro: ATIVO em tarja amarela. */
+    if (delivering && note) {
+      return { cls:'b-a', txt:'ATIVO', group:'active', issue: (issue ? issue + ' | ' : '') + note, isError:true, note: note };
+    }
+    /* Issue de campanha mesmo estando ACTIVE (sem dados de anuncio): amarelo. */
+    if (issue && info.cls === 'b-gr') { return { cls:'b-a', txt:'ATIVO', group:'active', issue:issue, isError:true, note:'' }; }
+    return { cls:info.cls, txt:info.txt, group:info.group, issue:issue, isError: info.cls === 'b-r', note:'' };
+  }
+  function acaoBadge(a) {
+    if (!a || a === 'ok') return '<span class="badge b-gy">monitorar</span>';
+    if (a === 'DESATIVADA') return '<span class="badge b-gy">DESATIVADA</span>';
+    if (a.indexOf('urgente') >= 0) return '<span class="badge b-r">'+a+'</span>';
+    if (a.indexOf('vincular') >= 0 || a.indexOf('regularizar') >= 0) return '<span class="badge b-a">'+a+'</span>';
+    if (a.indexOf('engajamento') >= 0) return '<span class="badge b-bl">'+a+'</span>';
+    if (a.indexOf('escalar') >= 0) return '<span class="badge b-gr">'+a+'</span>';
+    return '<span class="badge b-gy">'+a+'</span>';
+  }
+  function getAcao(acc) {
+    var s = acc.account_status;
+    if (s === 2) return 'DESATIVADA';
+    if (s === 3) return 'regularizar urgente';
+    if (!acc._card) return 'vincular cartao';
+    if (acc._cat === 'none') return 'criar engajamento';
+    if (acc._cat === 'noeng') return 'criar engajamento';
+    if (acc._cat === 'engonly') return 'escalar para vendas';
+    return 'ok';
+  }
+  function classify(camps) {
+    if (!camps || !camps.length) return 'none';
+    var ac = camps.filter(function(c) { return c.status === 'ACTIVE'; });
+    if (!ac.length) return 'none';
+    var hasE = ac.some(function(c) { return ENG.indexOf(c.objective) >= 0 || (c.name && c.name.toLowerCase().indexOf('engaj') >= 0); });
+    var hasS = ac.some(function(c) { var n = c.name ? c.name.toLowerCase() : ''; return SALES.indexOf(c.objective) >= 0 || n.indexOf('cbo') >= 0 || n.indexOf('reat') >= 0 || n.indexOf('tst') >= 0 || n.indexOf('escala') >= 0; });
+    if (hasE && hasS) return 'both';
+    if (hasE) return 'engonly';
+    if (hasS) return 'noeng';
+    return 'none';
+  }
+
+  function showSetup() {
+    document.getElementById('mainContent').innerHTML = '<div class="setup-box"><h2>&#128274; Configure seu acesso</h2><p>Cole seu token do Meta Ads abaixo. Ele sera salvo apenas no seu navegador e nunca ficara visivel no codigo da pagina.</p><input class="setup-inp" id="setupTk" type="password" placeholder="EAAUkGiht2h..."><br><button class="btn btn-blue" id="btnSetupSave" style="width:100%;justify-content:center;margin-top:8px">Conectar e carregar contas</button><p style="margin-top:12px;font-size:11px;color:#6e7681">Voce pode adicionar mais tokens depois pelo botao &#9881; Tokens no topo.</p></div>';
+    document.getElementById('btnSetupSave').addEventListener('click', function() {
+      var v = (document.getElementById('setupTk') || {}).value;
+      if (!v || !v.trim()) { alert('Cole o token antes de continuar.'); return; }
+      saveTksLS([v.trim()]); load();
+    });
+  }
+
+  function renderShell() {
+    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#3fb950" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#f85149" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#d2a20a" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto mes atual</div><div class="mc-v" id="mSpend">---</div><div class="mc-s">this_month</div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span style="width:1px;height:20px;background:#30363d;margin:0 4px"></span><span style="font-size:12px;color:#6e7681;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
+    document.getElementById('mainContent').addEventListener('click', function(e) {
+      var pill = e.target.closest ? e.target.closest('.pill') : null;
+      if (!pill) return;
+      if (pill.dataset.af != null) {
+        curAcctF = pill.dataset.af;
+        document.querySelectorAll('#mdb .afpill').forEach(function(p) { p.classList.remove('on'); });
+        pill.classList.add('on'); renderTable();
+      } else if (pill.dataset.f != null) {
+        curF = pill.dataset.f;
+        document.querySelectorAll('#mdb .pill[data-f]').forEach(function(p) { p.classList.remove('on'); });
+        pill.classList.add('on'); renderTable();
+      }
+    });
+    document.getElementById('mainContent').addEventListener('input', function(e) { if (e.target && e.target.id === 'srch') renderTable(); });
+  }
+
+  function load() {
+    var tks = getTks();
+    if (!tks.length) { showSetup(); return; }
+    setSpin(true); renderShell();
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld"><span class="spin"></span>Buscando contas...</td></tr>';
+    var map = {};
+    var chain = Promise.resolve();
+    tks.forEach(function(tk) {
+      chain = chain.then(function() {
+        return fj(API+'/me/adaccounts?fields=name,account_status,spend_cap,currency,funding_source_details&limit=200&access_token='+tk).then(function(d) {
+          if (d.error) { console.warn('Token err:', d.error.message); return; }
+          (d.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
+        }).catch(function(e) { console.warn(e); });
+      });
+    });
+    chain.then(function() {
+      var accounts = Object.values(map);
+      if (!accounts.length) { document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld" style="color:#f85149">Nenhuma conta encontrada. Verifique o token em &#9881; Tokens.</td></tr>'; setSpin(false); return; }
+      document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld"><span class="spin"></span>Carregando dados de '+accounts.length+' contas...</td></tr>';
+      var idx = 0;
+      function nextBatch() {
+        if (idx >= accounts.length) { finish(accounts); return; }
+        var batch = accounts.slice(idx, idx+6); idx += 6;
+        return Promise.all(batch.map(function(acc) {
+          return Promise.all([
+            fj(API+'/'+acc.id+'/campaigns?fields=name,status,objective&effective_status=["ACTIVE","PAUSED"]&limit=100&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=today&level=account&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=yesterday&level=account&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=last_7d&level=account&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=this_month&level=account&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=last_month&level=account&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'?fields=daily_spend_limit,funding_source_details&access_token='+acc._tk).then(function(r){ return r.error ? {} : r; }).catch(function(){ return {}; })
+          ]).then(function(res) {
+            acc._camps = (res[0].data) || [];
+            acc._sToday = spendVal(res[1]);
+            acc._sYest  = spendVal(res[2]);
+            acc._s7d    = spendVal(res[3]);
+            acc._sMon   = spendVal(res[4]);
+            acc._sLmon  = spendVal(res[5]);
+            var dlRes = res[6];
+            var dlVal = dlRes && dlRes.daily_spend_limit;
+            acc._dl = (dlVal && dlVal !== '0' && dlVal !== 0) ? dlVal : null;
+            var fs = (dlRes && dlRes.funding_source_details) || acc.funding_source_details;
+            acc._card = (fs && fs.display_string) ? fs.display_string : null;
+            acc._cat = classify(acc._camps);
+          }).catch(function() { acc._camps = []; acc._sToday = 0; acc._sYest = 0; acc._s7d = 0; acc._sMon = 0; acc._sLmon = 0; acc._dl = null; });
+        })).then(nextBatch);
+      }
+      return nextBatch();
+    }).catch(function(e) {
+      if (document.getElementById('tbody')) document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld" style="color:#f85149">Erro: '+e.message+'</td></tr>';
+      setSpin(false);
+    });
+  }
+
+  function finish(accounts) {
+    allData = accounts; renderMetrics(accounts); renderTable();
+    var now = new Date();
+    var ts = now.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    document.getElementById('tsLbl').textContent = 'Atualizado: '+ts;
+    document.getElementById('lastUpd').textContent = 'Ultima atualizacao: '+ts;
+    var uns = accounts.filter(function(a) { return a.account_status === 3; });
+    var ab = document.getElementById('alertBox');
+    if (uns.length) { ab.style.display = 'block'; ab.innerHTML = '<strong>Pagamento pendente:</strong> '+uns.map(function(a){return a.name;}).join(', '); } else { ab.style.display = 'none'; }
+    setSpin(false);
+  }
+
+  function renderMetrics(acc) {
+    document.getElementById('mTotal').textContent = acc.length;
+    document.getElementById('mAtivas').textContent = acc.filter(function(a){return a.account_status===1;}).length;
+    document.getElementById('mProb').textContent = acc.filter(function(a){return a.account_status===2||a.account_status===3;}).length;
+    document.getElementById('mSemCard').textContent = acc.filter(function(a){return !a._card;}).length;
+    var tot = acc.reduce(function(s,a){return s+parseFloat(a._sMon||0);},0);
+    document.getElementById('mSpend').textContent = tot > 0 ? fmtUSD(tot) : '---';
+    var ct = {none:0,engonly:0,both:0,noeng:0,warn:0};
+    acc.forEach(function(a){ ct[a._cat]=(ct[a._cat]||0)+1; if(a.account_status===3)ct.warn++; });
+    document.getElementById('cAll').textContent = '('+acc.length+')';
+    document.getElementById('cNone').textContent = ct.none?'('+ct.none+')':'';
+    document.getElementById('cEngO').textContent = ct.engonly?'('+ct.engonly+')':'';
+    document.getElementById('cBoth').textContent = ct.both?'('+ct.both+')':'';
+    document.getElementById('cNoE').textContent = ct.noeng?'('+ct.noeng+')':'';
+    document.getElementById('cWarn').textContent = ct.warn?'('+ct.warn+'!)':'';
+  }
+
+  function renderTable() {
+    var srch = document.getElementById('srch');
+    var q = srch ? srch.value.toLowerCase() : '';
+    var rows = allData.filter(function(a) {
+      var mf = curF==='all' || (curF==='warn' && a.account_status===3) || a._cat===curF;
+      var mAcct = curAcctF==='all' || (curAcctF==='active' && a.account_status===1) || (curAcctF==='disabled' && a.account_status!==1);
+      var mq = !q || a.name.toLowerCase().indexOf(q) >= 0;
+      return mf && mAcct && mq;
+    });
+    var tb = document.getElementById('tbody');
+    if (!tb) return;
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="11" class="ld">Nenhuma conta encontrada.</td></tr>'; return; }
+    tb.innerHTML = rows.map(function(acc) {
+      var name = acc.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var dl = acc._dl ? fmtCents(acc._dl) : '---';
+      var acao = getAcao(acc);
+      var rowBg = acc.account_status === 2 ? 'background:rgba(248,81,73,.08);' : (acao === 'ok' ? 'background:rgba(210,153,34,.07);' : '');
+      return '<tr style="'+rowBg+'">'+
+        '<td style="font-weight:500;color:#f0f6fc;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="'+name+'">'+name+'</td>'+
+        '<td>'+statusBadge(acc.account_status)+'</td>'+
+        '<td>'+campBadge(acc._cat)+'</td>'+
+        '<td style="font-size:12px">'+(acc._card?('<span style="color:#8b949e">'+acc._card.replace(/</g,'&lt;')+'</span>'):'<span class="badge b-r">sem cartao</span>')+'</td>'+
+        '<td style="font-size:12px;color:#58a6ff">'+dl+'</td>'+
+        '<td style="font-size:12px">'+(acc._sToday>0?fmtUSD(acc._sToday):'---')+'</td>'+
+        '<td style="font-size:12px;color:#8b949e">'+(acc._sYest>0?fmtUSD(acc._sYest):'---')+'</td>'+
+        '<td style="font-size:12px">'+(acc._s7d>0?fmtUSD(acc._s7d):'---')+'</td>'+
+        '<td style="font-size:12px;color:#3fb950">'+(acc._sMon>0?fmtUSD(acc._sMon):'---')+'</td>'+
+        '<td style="font-size:12px;color:#8b949e">'+(acc._sLmon>0?fmtUSD(acc._sLmon):'---')+'</td>'+
+        '<td>'+acaoBadge(acao)+'</td>'+
+        '</tr>';
+    }).join('');
+  }
+
+  /* ── Conversoes: prioriza RedTrack, cai para Utmify ── */
+  function fetchConversions(camps) {
+    camps.forEach(function(c){ c._conv = null; });
+    if (getRtTk()) {
+      return fetchRedTrack(camps).catch(function(){
+        return getUtmTk() ? fetchUtmify(camps) : null;
+      });
+    }
+    if (getUtmTk()) return fetchUtmify(camps);
+    return Promise.resolve();
+  }
+
+  /* ── RedTrack (prioritario) ── match por campaign_id do Meta, fallback por nome ── */
+  function fetchRedTrack(camps) {
+    var tk = getRtTk();
+    if (!tk) return Promise.reject(new Error('sem token RedTrack'));
+    var dates = periodDates();
+    var until = dates ? dates.until : new Date().toISOString().split('T')[0];
+    var since = dates ? dates.since : (function(){ var d = new Date(); d.setMonth(d.getMonth()-36); return d.toISOString().split('T')[0]; })();
+    /* Sub3 no RedTrack = campaign_id do Meta. Agrupamos por sub3 para casar 1:1. */
+    var url = RT_API + '/report?api_key=' + encodeURIComponent(tk) + '&group=sub3&date_from=' + since + '&date_to=' + until + '&per=1000';
+    return fetch(url, { headers: {'Accept':'application/json'} })
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        var rows = d.items || d.data || d.report || (Array.isArray(d) ? d : []);
+        if (!Array.isArray(rows)) rows = [];
+        try {
+          console.log('RedTrack >> ' + rows.length + ' linha(s).');
+          if (rows.length) console.log('RedTrack >> campos da 1a linha (JSON):', JSON.stringify(rows[0]));
+        } catch(e){}
+        var pickInt = function(o, keys){ for (var i=0;i<keys.length;i++){ if (o[keys[i]] != null && o[keys[i]] !== '') return parseInt(o[keys[i]])||0; } return 0; };
+        var pickNum = function(o, keys){ for (var i=0;i<keys.length;i++){ if (o[keys[i]] != null && o[keys[i]] !== '') return parseFloat(o[keys[i]])||0; } return 0; };
+        /* No RedTrack as conversoes vem em convtype1..40 (cada numero = um tipo configurado).
+           O usuario informa o numero do tipo Purchase e do InitiateCheckout. */
+        /* Padrao do RedTrack do usuario: Type 1 = Purchase (venda), Type 2 = InitiateCheckout. */
+        var pType = getRtPType() || '1', icType = getRtICType() || '2';
+        var byId = {}, byName = {};
+        rows.forEach(function(row) {
+          var sales = parseInt(row['convtype'+pType]) || 0;
+          var ic = parseInt(row['convtype'+icType]) || 0;
+          var rev = parseFloat(row['revenuetype'+pType]) || parseFloat(row.total_revenue) || 0;
+          var conv = { sales: sales, ic: ic, revenue: rev };
+          ['sub3','campaign_id','source_campaign_id','rt_campaign_id','fb_campaign_id','id'].forEach(function(k){
+            if (row[k] != null && row[k] !== '') byId[String(row[k])] = conv;
+          });
+          var nm = (row.campaign || row.campaign_name || row.title || row.source_title || '').toLowerCase();
+          if (nm) byName[nm] = conv;
+        });
+        camps.forEach(function(c) {
+          var f = byId[String(c.id)];
+          if (!f) {
+            var key = c.name.toLowerCase();
+            f = byName[key];
+            if (!f) {
+              var parts = key.split(/[\s_-]/);
+              Object.keys(byName).forEach(function(k) {
+                if (!f && parts.some(function(p){ return p.length>3 && k.indexOf(p)>=0; })) f = byName[k];
+              });
+            }
+          }
+          c._conv = f || null;
+        });
+      });
+  }
+
+  /* ── Utmify (fallback) ── */
+  function fetchUtmify(camps) {
+    var tk = getUtmTk();
+    if (!tk) { camps.forEach(function(c){ c._conv = null; }); return Promise.resolve(); }
+    var dates = periodDates();
+    var url = UTM_API;
+    if (dates) url += '?start_date='+dates.since+'&end_date='+dates.until;
+    return fetch(url, { headers: {'Authorization':'Bearer '+tk,'Accept':'application/json'} })
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        var orders = d.data || d.orders || d || [];
+        if (!Array.isArray(orders)) orders = [];
+        var byName = {};
+        orders.forEach(function(o) {
+          var key = (o.utm_campaign || o.campaign_name || '').toLowerCase();
+          if (!key) return;
+          if (!byName[key]) byName[key] = {sales:0,ic:0,revenue:0};
+          var status = (o.status || o.payment_status || '').toLowerCase();
+          if (status === 'approved' || status === 'paid' || status === 'completed') { byName[key].sales++; byName[key].revenue += parseFloat(o.value || o.total || o.amount || 0) || 0; }
+          if (o.event_type === 'InitiateCheckout' || o.initiated_checkout) byName[key].ic++;
+        });
+        camps.forEach(function(c) {
+          var key = c.name.toLowerCase();
+          var found = byName[key];
+          if (!found) {
+            var parts = key.split(/[\s_-]/);
+            Object.keys(byName).forEach(function(k) {
+              if (!found && parts.some(function(p){ return p.length>3 && k.indexOf(p)>=0; })) found = byName[k];
+            });
+          }
+          c._conv = found || null;
+        });
+      })
+      .catch(function() { camps.forEach(function(c){ c._conv = null; }); });
+  }
+
+  /* ── CBO Load ── */
+  function loadCBO() {
+    var tks = getTks();
+    if (!tks.length) { alert('Configure um token primeiro em Tokens.'); return; }
+    var spinEl = document.getElementById('spinCBO');
+    if (spinEl) spinEl.style.display = 'inline-block';
+    document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando contas ativas...</td></tr>';
+    var map = {};
+    var chain = Promise.resolve();
+    tks.forEach(function(tk) {
+      chain = chain.then(function() {
+        /* fjPaged segue a paginacao — antes pegava so a 1a pagina e faltavam contas. */
+        return fjPaged(API+'/me/adaccounts?fields=name,account_status&limit=100&access_token='+tk).then(function(list) {
+          list.forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
+        }).catch(function(e) { console.warn(e); });
+      });
+    });
+    chain.then(function() {
+      /* Inclui contas nao-ativas tambem (status 2 bloqueada, 3 pendencia) para dar visibilidade. */
+      var accounts = Object.values(map);
+      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#f85149">Nenhuma conta encontrada.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
+      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando campanhas CBO em '+accounts.length+' contas...</td></tr>';
+      var camps = [];
+      var idx = 0;
+      function nextBatch() {
+        if (idx >= accounts.length) {
+          /* Mantem TODAS as CBO de contas ativas (status 1), de todos os tokens. */
+          var keepAcct = {};
+          camps.forEach(function(c){
+            if (c._acctStatus === 1) keepAcct[c._acctId] = true;
+            else if (((c.effective_status||c.status||'').toUpperCase())==='ACTIVE') keepAcct[c._acctId] = true;
+          });
+          var filtered = camps.filter(function(c){ return keepAcct[c._acctId]; });
+          return fetchCBOSpend(filtered.length ? filtered : camps);
+        }
+        var batch = accounts.slice(idx, idx+6); idx += 6;
+        return Promise.all(batch.map(function(acc) {
+          /* effective_status no FILTRO so aceita valores de campanha: ACTIVE, PAUSED, IN_PROCESS, WITH_ISSUES.
+             Valores de anuncio (DISAPPROVED etc.) causavam erro 400. */
+          /* Contas/BMs a ignorar (ex: Effective 01 e Origin). */
+          var an = (acc.name || '').toLowerCase();
+          if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0) return null;
+          return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,lifetime_budget,stop_time,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
+            list.filter(function(c) {
+              var es = (c.effective_status || c.status || '').toUpperCase();
+              if (es === 'DELETED' || es === 'ARCHIVED') return false; /* nao mostrar excluidas/arquivadas */
+              return c.name && c.name.toUpperCase().indexOf('CBO') >= 0 && c.lifetime_budget;
+            }).forEach(function(c) {
+              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; camps.push(c);
+            });
+          }).catch(function(){});
+        })).then(nextBatch);
+      }
+      return nextBatch();
+    }).catch(function(e) {
+      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#f85149">Erro: '+(e&&e.message?e.message:'desconhecido')+'</td></tr>';
+      if (spinEl) spinEl.style.display='none';
+    });
+  }
+
+  function fetchCBOSpend(camps) {
+    if (!camps.length) {
+      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld">Nenhuma campanha CBO encontrada nas contas ativas.</td></tr>';
+      var spinEl = document.getElementById('spinCBO'); if (spinEl) spinEl.style.display='none';
+      return Promise.resolve();
+    }
+    var isLifetime = (cboPeriod === 'lifetime');
+    var activePeriod = cboPeriod;
+    /* date_preset=lifetime retorna vazio em algumas campanhas. Usamos um time_range,
+       mas o Meta so aceita ate ~37 meses atras (time_range maior FALHA e volta vazio),
+       por isso a janela e de 36 meses — cobre o acumulado real das campanhas. */
+    var untilDay = new Date().toISOString().split('T')[0];
+    var sinceD = new Date(); sinceD.setMonth(sinceD.getMonth() - 36);
+    var sinceDay = sinceD.toISOString().split('T')[0];
+    var totalRange = encodeURIComponent(JSON.stringify({ since: sinceDay, until: untilDay }));
+    document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Carregando metricas de '+camps.length+' campanhas CBO ('+periodLabel()+')...</td></tr>';
+    var idx = 0;
+    function nextBatch() {
+      if (idx >= camps.length) {
+        return fetchConversions(camps).then(function() {
+          cboData = camps; renderCBO();
+          var sp = document.getElementById('spinCBO'); if (sp) sp.style.display='none';
+        });
+      }
+      var batch = camps.slice(idx, idx+6); idx += 6;
+      return Promise.all(batch.map(function(c) {
+        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,cpc&time_range='+totalRange+'&access_token='+c._tk;
+        /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
+        var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
+        var calls = isLifetime
+          ? [fj(totalUrl), fj(adsUrl)]
+          : [fj(totalUrl),
+             fj(API+'/'+c.id+'/insights?fields=spend,clicks,cpc&date_preset='+activePeriod+'&access_token='+c._tk),
+             fj(adsUrl)];
+        return Promise.all(calls).then(function(res) {
+          var t = res[0].data && res[0].data[0];
+          c._spend = t ? parseFloat(t.spend) : 0;
+          var adsRes;
+          if (isLifetime) {
+            c._periodSpend = c._spend;
+            c._clicks = t ? (parseInt(t.clicks) || 0) : 0;
+            c._cpc = t ? (parseFloat(t.cpc) || 0) : 0;
+            adsRes = res[1];
+          } else {
+            var p = res[1].data && res[1].data[0];
+            c._periodSpend = p ? parseFloat(p.spend) : 0;
+            c._clicks = p ? (parseInt(p.clicks) || 0) : 0;
+            c._cpc = p ? (parseFloat(p.cpc) || 0) : 0;
+            adsRes = res[2];
+          }
+          var ads = (adsRes && adsRes.data) ? adsRes.data : [];
+          c._adTotal = ads.length;
+          c._adRejected = ads.filter(function(a){ return (a.effective_status||'').toUpperCase()==='DISAPPROVED'; }).length;
+          c._adWithErr = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
+        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adRejected=0; c._adWithErr=0; });
+      })).then(nextBatch);
+    }
+    return nextBatch();
+  }
+
+  /* Sugestao de orcamento diario com base no ROAS (faturamento = vendas x $260). */
+  function suggestBudget(roas, sales, spend) {
+    if ((!sales || sales === 0) && spend >= 110) return { txt:'Orcamento $100', cls:'d-bad' };
+    if (roas <= 0) return { txt:'---', cls:'' };
+    if (roas > 3) return { txt:'Quintuplicar orcamento', cls:'d-good' };
+    if (roas > 1.8) return { txt:'Dobrar orcamento', cls:'d-good' };
+    if (roas > 1.5) return { txt:'Aumentar 30-50%', cls:'d-good' };
+    if (roas >= 1.4) return { txt:'Manter $200/dia', cls:'d-warn' };
+    if (roas < 1.3) return { txt:'Reduzir p/ $170', cls:'d-bad' };
+    return { txt:'Observar', cls:'d-warn' };
+  }
+  function sortVal(camp, key) {
+    var sp = camp._periodSpend || 0;
+    var cv = camp._conv;
+    var sales = cv ? (cv.sales||0) : 0;
+    var fat = sales * 260;
+    if (key === 'sales') return cv ? sales : -1;
+    if (key === 'cpa') { return (sales > 0 && sp > 0) ? (sp / sales) : Number.MAX_VALUE; }
+    if (key === 'roas') return sp > 0 ? (fat / sp) : -1;
+    if (key === 'profit') return cv ? (fat - sp) : -1e15;
+    return 0;
+  }
+  function sortCBO() {
+    var k = cboSort.key, dir = cboSort.dir === 'asc' ? 1 : -1;
+    cboData.sort(function(a, b) {
+      var va = sortVal(a, k), vb = sortVal(b, k);
+      if (va !== vb) return (va - vb) * dir;
+      /* desempate: sempre quem tem mais vendas e melhor ROAS sobe. */
+      var sa = sortVal(a,'sales'), sb = sortVal(b,'sales');
+      if (sa !== sb) return sb - sa;
+      return sortVal(b,'roas') - sortVal(a,'roas');
+    });
+  }
+
+  function renderCBO() {
+    var hasC = hasConv();
+    if (!cboData.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld">Nenhuma campanha CBO encontrada.</td></tr>'; return; }
+    sortCBO();
+    var arrow = cboSort.dir === 'asc' ? ' &#9650;' : ' &#9660;';
+    var thV = document.getElementById('thVendas'); if (thV) thV.innerHTML = 'Vendas' + (cboSort.key==='sales'?arrow:' &#8645;');
+    var thC = document.getElementById('thCPA'); if (thC) thC.innerHTML = 'CPA' + (cboSort.key==='cpa'?arrow:' &#8645;');
+    var thL = document.getElementById('thLucro'); if (thL) thL.innerHTML = 'Lucro' + (cboSort.key==='profit'?arrow:' &#8645;');
+    var thR = document.getElementById('thRoas'); if (thR) thR.innerHTML = 'ROAS' + (cboSort.key==='roas'?arrow:' &#8645;');
+    var rowsHtml = cboData.map(function(camp, i) {
+      var lb = parseFloat(camp.lifetime_budget) / 100;
+      var spent = camp._spend || 0;
+      var remaining = lb - spent;
+      var st = campStatusInfo(camp);
+      var stBadge = '<span class="badge '+st.cls+'"'+(st.issue?(' title="'+st.issue.replace(/"/g,'&quot;')+'"'):'')+'>'+st.txt+(st.issue?' &#9888;':'')+'</span>';
+      var curEnd = camp.stop_time ? (typeof camp.stop_time === 'number' ? new Date(camp.stop_time * 1000) : new Date(camp.stop_time)).toISOString().split('T')[0] : '';
+      var name = camp.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var acctName = camp._accountName.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      var periodSpend = camp._periodSpend > 0 ? fmtUSD(camp._periodSpend) : '---';
+      var clicks = camp._clicks > 0 ? camp._clicks.toLocaleString('pt-BR') : '---';
+      var cpc = camp._cpc > 0 ? fmtUSD(camp._cpc) : '---';
+      var sp = camp._periodSpend || 0, clk = camp._clicks || 0;
+      var sales = (hasC && camp._conv) ? (camp._conv.sales||0) : 0;
+      var ics = (hasC && camp._conv) ? (camp._conv.ic||0) : 0;
+      var fatNum = sales * 260, roasNum = sp > 0 ? fatNum/sp : 0, lucroNum = fatNum - sp;
+      var pct = function(n,d){ return (d>0) ? (n/d*100).toFixed(1).replace('.',',')+'%' : '---'; };
+      var sem = '<span style="color:#6e7681;font-size:11px">sem token</span>';
+      var utmVendas, utmCPA, utmIC, utmCPI, pcrTxt, convTxt, iccrTxt, fatTxt, lucroTxt, roasTxt, sugTxt;
+      if (!hasC) {
+        utmVendas=utmCPA=utmIC=utmCPI=pcrTxt=convTxt=iccrTxt=fatTxt=lucroTxt=roasTxt=sem; sugTxt='---';
+      } else {
+        utmVendas = sales > 0 ? sales : '0';
+        utmCPA = (sales > 0 && sp > 0) ? fmtUSD(sp / sales) : '---';
+        utmIC = ics > 0 ? ics : '0';
+        utmCPI = (ics > 0 && sp > 0) ? fmtUSD(sp / ics) : '---';
+        pcrTxt = pct(sales, clk); convTxt = pct(sales, ics); iccrTxt = pct(ics, clk);
+        fatTxt = fatNum > 0 ? fmtUSD(fatNum) : '---';
+        lucroTxt = (fatNum > 0 || sp > 0) ? '<span class="'+(lucroNum>=0?'d-good':'d-bad')+'">'+fmtUSD(lucroNum)+'</span>' : '---';
+        roasTxt = roasNum > 0 ? '<span class="'+(roasNum>=1.4?'d-good':(roasNum>=1.2?'d-warn':'d-bad'))+'">'+roasNum.toFixed(2).replace('.',',')+'</span>' : '---';
+        var sug = suggestBudget(roasNum, sales, sp);
+        sugTxt = '<span class="'+sug.cls+'" style="font-size:11px;font-weight:600">'+sug.txt+'</span>';
+      }
+      var diarioMeta = '---', initDays = '---', initEnd = '---';
+      if (camp.stop_time) {
+        var stopD = typeof camp.stop_time === 'number' ? new Date(camp.stop_time * 1000) : new Date(camp.stop_time);
+        var todayD = new Date(); todayD.setHours(0,0,0,0);
+        var dLeft = Math.ceil((stopD - todayD) / 86400000);
+        if (dLeft < 0) dLeft = 0;
+        if (dLeft > 0 && remaining > 0) diarioMeta = fmtUSD(remaining / dLeft);
+        var clsD = dLeft > 90 ? 'd-good' : (dLeft > 30 ? 'd-warn' : 'd-bad');
+        initDays = '<span class="'+clsD+'">'+dLeft+' dias</span>';
+        initEnd = stopD.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric'});
+      }
+      return '<tr data-cbo="'+i+'" data-status="'+st.group+'" data-error="'+(st.isError?'1':'')+'" data-name="'+camp.name.toLowerCase().replace(/"/g,'&quot;')+'">' +
+        '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
+        '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
+        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'</td>' +
+        '<td style="font-size:12px">'+fmtUSD(lb)+'</td>' +
+        '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
+        '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+fmtUSD(remaining)+'</td>' +
+        '<td style="font-size:12px;border-left:1px solid #21262d">'+periodSpend+'</td>' +
+        '<td style="font-size:12px">'+clicks+'</td>' +
+        '<td style="font-size:12px">'+cpc+'</td>' +
+        '<td style="font-size:12px;border-left:1px solid #21262d">'+utmVendas+'</td>' +
+        '<td style="font-size:12px">'+utmCPA+'</td>' +
+        '<td style="font-size:12px">'+utmIC+'</td>' +
+        '<td style="font-size:12px">'+utmCPI+'</td>' +
+        '<td style="font-size:12px">'+pcrTxt+'</td>' +
+        '<td style="font-size:12px">'+convTxt+'</td>' +
+        '<td style="font-size:12px">'+iccrTxt+'</td>' +
+        '<td style="font-size:12px;color:#3fb950">'+fatTxt+'</td>' +
+        '<td style="font-size:12px">'+lucroTxt+'</td>' +
+        '<td style="font-size:12px">'+roasTxt+'</td>' +
+        '<td style="font-size:12px;color:#d2a20a;font-weight:600">'+diarioMeta+'</td>' +
+        '<td><input class="cbo-inp" id="cdaily_'+i+'" type="number" min="1" step="any" placeholder="ex: 100"></td>' +
+        '<td style="max-width:150px;white-space:normal;line-height:1.3">'+sugTxt+'</td>' +
+        '<td id="cdays_'+i+'" style="font-size:13px">'+initDays+'</td>' +
+        '<td id="cend_'+i+'" style="font-size:12px;color:#c9d1d9">'+initEnd+'</td>' +
+        '<td><input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'"></td>' +
+        '<td><button class="save-btn" id="csavebtn_'+i+'">Aplicar</button></td>' +
+        '</tr>';
+    }).join('');
+    /* Linha de TOTAIS no final somando as metricas */
+    var T = { lb:0, spent:0, rem:0, sp:0, clk:0, sales:0, ics:0, fat:0, lucro:0 };
+    cboData.forEach(function(c) {
+      var lbv = parseFloat(c.lifetime_budget)/100 || 0;
+      var spentv = c._spend || 0;
+      T.lb += lbv; T.spent += spentv; T.rem += (lbv - spentv);
+      T.sp += c._periodSpend || 0; T.clk += c._clicks || 0;
+      var sv = (hasC && c._conv) ? (c._conv.sales||0) : 0;
+      var iv = (hasC && c._conv) ? (c._conv.ic||0) : 0;
+      T.sales += sv; T.ics += iv; T.fat += sv*260; T.lucro += (sv*260 - (c._periodSpend||0));
+    });
+    var tPct = function(n,d){ return d>0 ? (n/d*100).toFixed(1).replace('.',',')+'%' : '---'; };
+    var tCPC = T.clk>0 ? fmtUSD(T.sp/T.clk) : '---';
+    var tCPA = T.sales>0 ? fmtUSD(T.sp/T.sales) : '---';
+    var tCPI = T.ics>0 ? fmtUSD(T.sp/T.ics) : '---';
+    var tRoas = T.sp>0 ? (T.fat/T.sp) : 0;
+    var totalsRow = '<tr style="background:#0d1117;font-weight:600;border-top:2px solid #30363d">' +
+      '<td style="color:#f0f6fc">TOTAL ('+cboData.length+' camp.)</td>' +
+      '<td></td><td></td>' +
+      '<td style="color:#f0f6fc">'+fmtUSD(T.lb)+'</td>' +
+      '<td style="color:#8b949e">'+fmtUSD(T.spent)+'</td>' +
+      '<td style="color:#58a6ff">'+fmtUSD(T.rem)+'</td>' +
+      '<td style="border-left:1px solid #21262d;color:#f0f6fc">'+fmtUSD(T.sp)+'</td>' +
+      '<td>'+(T.clk>0?T.clk.toLocaleString('pt-BR'):'---')+'</td>' +
+      '<td>'+tCPC+'</td>' +
+      '<td style="border-left:1px solid #21262d;color:#f0f6fc">'+(hasC?T.sales:'---')+'</td>' +
+      '<td>'+(hasC?tCPA:'---')+'</td>' +
+      '<td>'+(hasC?T.ics:'---')+'</td>' +
+      '<td>'+(hasC?tCPI:'---')+'</td>' +
+      '<td>'+(hasC?tPct(T.sales,T.clk):'---')+'</td>' +
+      '<td>'+(hasC?tPct(T.sales,T.ics):'---')+'</td>' +
+      '<td>'+(hasC?tPct(T.ics,T.clk):'---')+'</td>' +
+      '<td style="color:#3fb950">'+(hasC&&T.fat>0?fmtUSD(T.fat):'---')+'</td>' +
+      '<td>'+(hasC?'<span class="'+(T.lucro>=0?'d-good':'d-bad')+'">'+fmtUSD(T.lucro)+'</span>':'---')+'</td>' +
+      '<td>'+(hasC&&tRoas>0?'<span class="'+(tRoas>=1.4?'d-good':(tRoas>=1.2?'d-warn':'d-bad'))+'">'+tRoas.toFixed(2).replace('.',',')+'</span>':'---')+'</td>' +
+      '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
+      '</tr>';
+    document.getElementById('cboTbody').innerHTML = rowsHtml + totalsRow;
+    cboData.forEach(function(camp, i) {
+      var inp = document.getElementById('cdaily_'+i);
+      if (inp) inp.addEventListener('input', function() { calcCBORow(i, 'daily'); });
+      var dateInp = document.getElementById('cnewdate_'+i);
+      if (dateInp) dateInp.addEventListener('change', function() { calcCBORow(i, 'date'); });
+      var btn = document.getElementById('csavebtn_'+i);
+      if (btn) btn.addEventListener('click', function() { saveCBODate(i); });
+    });
+    applyCboFilters();
+  }
+
+  function applyCboFilters() {
+    var srchEl = document.getElementById('cboSrch');
+    var q = srchEl ? srchEl.value.toLowerCase().trim() : '';
+    document.querySelectorAll('#cboTbody tr[data-name]').forEach(function(tr) {
+      var nm = tr.getAttribute('data-name') || '';
+      var st = tr.getAttribute('data-status') || '';
+      var err = tr.getAttribute('data-error') === '1';
+      var okName = !q || nm.indexOf(q) >= 0;
+      var okStatus = (cboStatus === 'all') || (cboStatus === 'error' ? err : st === cboStatus);
+      tr.style.display = (okName && okStatus) ? '' : 'none';
+    });
+  }
+
+  function calcCBORow(i, source) {
+    var camp = cboData[i];
+    if (!camp) return;
+    var lb = parseFloat(camp.lifetime_budget) / 100;
+    var spent = camp._spend || 0;
+    var remaining = lb - spent;
+    var daily = parseFloat((document.getElementById('cdaily_'+i) || {}).value) || 0;
+    var daysEl = document.getElementById('cdays_'+i);
+    var endEl = document.getElementById('cend_'+i);
+    var dateInp = document.getElementById('cnewdate_'+i);
+    if (source === 'date' && dateInp && dateInp.value) {
+      var pickedDate = new Date(dateInp.value + 'T00:00:00');
+      var today = new Date(); today.setHours(0,0,0,0);
+      var days = Math.ceil((pickedDate - today) / 86400000);
+      if (days < 0) days = 0;
+      if (daysEl) { var cls2 = days > 90 ? 'd-good' : (days > 30 ? 'd-warn' : 'd-bad'); daysEl.innerHTML = '<span class="'+cls2+'">'+days+' dias</span>'; }
+      if (endEl) { endEl.textContent = pickedDate.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric'}); endEl.style.color = '#c9d1d9'; }
+      return;
+    }
+    if (daily <= 0) { if (daysEl) daysEl.innerHTML = '---'; if (endEl) endEl.textContent = '---'; return; }
+    var days = Math.floor(remaining / daily);
+    if (days < 0) days = 0;
+    var endDate = new Date();
+    endDate.setDate(endDate.getDate() + days);
+    if (daysEl) { var cls = days > 90 ? 'd-good' : (days > 30 ? 'd-warn' : 'd-bad'); daysEl.innerHTML = '<span class="'+cls+'">'+days+' dias</span>'; }
+    if (endEl) { endEl.textContent = endDate.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric'}); endEl.style.color = '#c9d1d9'; }
+    if (dateInp) dateInp.value = endDate.toISOString().split('T')[0];
+  }
+
+  function postForm(id, tk, params) {
+    var body = new URLSearchParams();
+    Object.keys(params).forEach(function(k){ body.append(k, params[k]); });
+    body.append('access_token', tk);
+    return fetch(API+'/'+id, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: body.toString() })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.error) throw new Error(d.error.message + (d.error.error_user_msg ? ' - '+d.error.error_user_msg : ''));
+        return d;
+      });
+  }
+
+  function saveCBODate(i) {
+    var camp = cboData[i];
+    if (!camp) return;
+    var dateInp = document.getElementById('cnewdate_'+i);
+    var dateVal = dateInp ? dateInp.value : '';
+    if (!dateVal) { alert('Selecione uma data antes de aplicar.'); return; }
+    var btn = document.getElementById('csavebtn_'+i);
+    if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
+    var endTs = Math.floor(new Date(dateVal + 'T23:59:59').getTime() / 1000);
+    var endIso = new Date(endTs * 1000).toISOString();
+    var wantDay = dateVal; /* yyyy-mm-dd desejado */
+
+    /* 1) Campanha: stop_time (+ reenvio do lifetime_budget, mesmo valor = nao reseta aprendizado).
+          Em campanhas de orcamento vitalicio o Meta costuma IGNORAR isso, por isso atualizamos
+          tambem os conjuntos abaixo. Esta etapa nao e fatal. */
+    var campParams = { stop_time: String(endTs) };
+    if (camp.lifetime_budget) campParams.lifetime_budget = String(camp.lifetime_budget);
+
+    postForm(camp.id, camp._tk, campParams).catch(function(){ return null; })
+      /* 2) O schedule de campanhas com orcamento vitalicio vive nos conjuntos (ad sets).
+            Atualiza o end_time de cada um — e isso que muda a data real de termino. */
+      .then(function(){ return fj(API+'/'+camp.id+'/adsets?fields=id,end_time&limit=200&access_token='+camp._tk); })
+      .then(function(d){
+        var sets = (d && d.data) || [];
+        if (!sets.length) return null;
+        return Promise.all(sets.map(function(s){ return postForm(s.id, camp._tk, { end_time: endIso }); }));
+      })
+      /* 3) Verifica de verdade lendo a campanha de novo. */
+      .then(function(){ return fj(API+'/'+camp.id+'?fields=stop_time&access_token='+camp._tk); })
+      .then(function(v){
+        /* Le a data SEM converter fuso: stop_time string vem no fuso da conta, entao
+           pegamos os 10 primeiros chars (yyyy-mm-dd) direto. */
+        var applied = null;
+        if (v && v.stop_time) {
+          applied = (typeof v.stop_time === 'string') ? v.stop_time.slice(0,10) : new Date(v.stop_time*1000).toISOString().split('T')[0];
+        }
+        camp.stop_time = (v && v.stop_time) ? v.stop_time : endTs;
+        /* Tolerancia de 1 dia (diferenca de fuso entre conta e navegador). */
+        var diffDays = applied ? Math.abs((new Date(applied) - new Date(wantDay)) / 86400000) : 0;
+        if (applied && diffDays > 1) {
+          throw new Error('O Meta registrou termino em ' + applied.split('-').reverse().join('/') + ' (esperado ' + wantDay.split('-').reverse().join('/') + '). Pode haver conjunto com outra data ou restricao da conta.');
+        }
+        if (btn) { btn.textContent = 'Aplicado!'; btn.style.background = '#3fb950'; btn.style.borderColor = '#3fb950'; }
+        setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 3000);
+      })
+      .catch(function(e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#f85149'; btn.style.borderColor = '#f85149'; }
+        setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 3500);
+        alert('Erro ao aplicar: ' + e.message + '\n\nVerifique se o token tem permissao ads_management.');
+      });
+  }
+
+  function openModal() { renderTkList(); document.getElementById('settModal').classList.add('show'); }
+  function closeModal() { document.getElementById('settModal').classList.remove('show'); }
+  function renderTkList() {
+    var tks = getTks();
+    var list = tks.length ? tks : [''];
+    document.getElementById('tkList').innerHTML = list.map(function(t,i) {
+      return '<div class="tk-row"><input class="tk-inp" id="ti_'+i+'" type="password" value="'+t+'" placeholder="Cole o token aqui"><button class="tk-rm" data-idx="'+i+'">x</button></div>';
+    }).join('');
+    document.getElementById('tkList').addEventListener('click', function(e) {
+      var b = e.target.closest ? e.target.closest('.tk-rm') : null;
+      if (b) { var t2 = getTks(); t2.splice(parseInt(b.dataset.idx,10),1); saveTksLS(t2); renderTkList(); }
+    });
+    var utmInp = document.getElementById('utmTkInp');
+    if (utmInp) utmInp.value = getUtmTk();
+    var rtInp = document.getElementById('rtTkInp');
+    if (rtInp) rtInp.value = getRtTk();
+    var rtP = document.getElementById('rtPInp'); if (rtP) rtP.value = getRtPType();
+    var rtIC = document.getElementById('rtICInp'); if (rtIC) rtIC.value = getRtICType();
+  }
+
+  /* CBO search filter */
+  var cboSrchEl = document.getElementById('cboSrch');
+  if (cboSrchEl) cboSrchEl.addEventListener('input', function() { applyCboFilters(); });
+
+  /* Ordenacao por clique nos cabecalhos Vendas / CPA */
+  document.querySelectorAll('#mdb th[data-sort]').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var k = this.dataset.sort;
+      if (cboSort.key === k) { cboSort.dir = (cboSort.dir === 'desc' ? 'asc' : 'desc'); }
+      else { cboSort.key = k; cboSort.dir = 'desc'; }
+      if (cboData.length) renderCBO();
+    });
+  });
+
+  document.querySelectorAll('#mdb [data-cbostatus]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      cboStatus = this.dataset.cbostatus;
+      document.querySelectorAll('#mdb [data-cbostatus]').forEach(function(b) { b.classList.remove('on'); });
+      this.classList.add('on');
+      applyCboFilters();
+    });
+  });
+
+  /* Period selector */
+  document.querySelectorAll('#mdb [data-period]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      cboPeriod = this.dataset.period;
+      document.querySelectorAll('#mdb [data-period]').forEach(function(b) { b.classList.remove('on'); });
+      this.classList.add('on');
+      if (cboData.length) {
+        var spinEl = document.getElementById('spinCBO');
+        if (spinEl) spinEl.style.display = 'inline-block';
+        fetchCBOSpend(cboData.slice());
+      }
+    });
+  });
+
+  document.querySelectorAll('#mdb .tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('#mdb .tab-btn').forEach(function(b) { b.classList.remove('on'); });
+      document.querySelectorAll('#mdb .tab-pane').forEach(function(p) { p.classList.remove('show'); });
+      this.classList.add('on');
+      curTab = this.dataset.tab;
+      document.getElementById('tab-'+curTab).classList.add('show');
+    });
+  });
+  document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else load(); });
+  document.getElementById('btnTokens').addEventListener('click', openModal);
+  document.getElementById('btnLoadCBO').addEventListener('click', loadCBO);
+  document.getElementById('btnAddTk').addEventListener('click', function() { var t = getTks(); t.push(''); saveTksLS(t); renderTkList(); });
+  document.getElementById('btnModalCancel').addEventListener('click', closeModal);
+  document.getElementById('btnModalSave').addEventListener('click', function() {
+    var inputs = document.querySelectorAll('[id^="ti_"]');
+    var tks = Array.prototype.slice.call(inputs).map(function(i){return i.value.trim();}).filter(Boolean);
+    if (!tks.length) { alert('Adicione pelo menos 1 token.'); return; }
+    saveTksLS(tks);
+    var utmInp = document.getElementById('utmTkInp');
+    if (utmInp) saveUtmTk(utmInp.value.trim());
+    var rtInp = document.getElementById('rtTkInp');
+    if (rtInp) saveRtTk(rtInp.value.trim());
+    var rtP = document.getElementById('rtPInp'); if (rtP) saveRtPType(rtP.value.trim());
+    var rtIC = document.getElementById('rtICInp'); if (rtIC) saveRtICType(rtIC.value.trim());
+    closeModal(); load();
+  });
+  document.getElementById('settModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+  load();
+  if (timer) clearInterval(timer);
+  timer = setInterval(function() { if (curTab === 'contas') load(); }, 5*60*1000);
+})();
+</script>
