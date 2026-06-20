@@ -19,11 +19,22 @@
   #mdb .foot-note{font-size:10px}
   /* dica de rolagem horizontal da tabela */
   #mdb .tbl-wrap{position:relative}
+  /* 1a coluna (Conta/Campanha) fixa ao rolar metricas no celular */
+  #mdb th:first-child,#mdb td:first-child{position:sticky;left:0;z-index:3;background:#161b22;max-width:140px;overflow:hidden;text-overflow:ellipsis;box-shadow:2px 0 4px rgba(0,0,0,.35)}
+  #mdb thead th:first-child{z-index:4}
+  #mdb tr:hover td:first-child{background:#1c2128}
+  #mdb .metrics{grid-template-columns:repeat(2,1fr)}
+  #mdb .mc-l{font-size:11px}
+  #mdb .mc-s{font-size:10px}
 }
 @media (max-width:480px){
-  #mdb .metrics{grid-template-columns:1fr 1fr}
+  #mdb .metrics{grid-template-columns:1fr 1fr;gap:7px}
+  #mdb .mc{padding:9px 10px}
+  #mdb .mc-v{font-size:18px}
   #mdb .hdr h1 .dot{display:none}
   #mdb .period-bar span{width:100%;margin-bottom:2px}
+  #mdb th,#mdb td{padding:7px 8px;font-size:11px}
+  #mdb th:first-child,#mdb td:first-child{max-width:104px}
 }</style>
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
@@ -360,7 +371,7 @@
             acc._sMon   = spendVal(res[4]);
             acc._sLmon  = spendVal(res[5]);
             var dlRes = res[6];
-            var dlVal = dlRes && dlRes.daily_spend_limit;
+            var dlVal = (dlRes && dlRes.daily_spend_limit) || acc.spend_cap;
             acc._dl = (dlVal && dlVal !== '0' && dlVal !== 0) ? dlVal : null;
             var fs = (dlRes && dlRes.funding_source_details) || acc.funding_source_details;
             acc._card = (fs && fs.display_string) ? fs.display_string : null;
@@ -418,7 +429,7 @@
     if (!rows.length) { tb.innerHTML = '<tr><td colspan="11" class="ld">Nenhuma conta encontrada.</td></tr>'; return; }
     tb.innerHTML = rows.map(function(acc) {
       var name = acc.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var dl = acc._dl ? fmtCents(acc._dl) : '---';
+      var dl = acc._dl ? fmtCents(acc._dl) : '<span style="color:#6e7681">Sem limite</span>';
       var acao = getAcao(acc);
       var rowBg = acc.account_status === 2 ? 'background:rgba(248,81,73,.08);' : (acao === 'ok' ? 'background:rgba(210,153,34,.07);' : '');
       return '<tr style="'+rowBg+'">'+
