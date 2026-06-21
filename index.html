@@ -58,6 +58,7 @@
       <strong>Formula:</strong> (Orcamento Vitalicio &minus; Gasto Total) &divide; Diario Desejado = Dias Restantes &rarr; Hoje + Dias = Data de Termino<br>
       <strong>Como usar:</strong> Preencha o campo <strong>Diario Desejado</strong> e os calculos aparecem automaticamente. Ajuste a <strong>Data Termino</strong> se quiser e clique em <strong>Aplicar</strong> para atualizar a campanha direto no Meta.
     </div>
+    <div id="rtDiag" style="display:none;background:#161b22;border:1px solid #30363d;border-left:3px solid #58a6ff;border-radius:0 6px 6px 0;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#8b949e;font-family:monospace;word-break:break-word"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div class="period-bar">
         <span style="font-size:12px;color:#6e7681;margin-right:2px">Periodo:</span>
@@ -160,6 +161,7 @@
   var cboPeriod = 'last_7d';
   var cboStatus = 'all';
   var cboSort = { key: 'sales', dir: 'desc' };
+  var rtDiag = '';
   var timer = null;
 
   function getTks() {
@@ -510,6 +512,16 @@
           }
           c._conv = f || null;
         });
+        var matched = camps.filter(function(c){ return c._conv; }).length;
+        var sampleSub3 = rows.length ? (rows[0].sub3 != null ? rows[0].sub3 : '(linha sem campo sub3)') : '';
+        var sampleKeys = rows.length ? Object.keys(rows[0]).join(', ') : '';
+        rtDiag = 'RedTrack OK: ' + rows.length + ' linhas | ' + matched + '/' + camps.length + ' campanhas casaram'
+               + (rows.length ? (' | ex. sub3=' + sampleSub3) : '')
+               + ((matched === 0 && rows.length) ? (' | campos da 1a linha: ' + sampleKeys) : '');
+      })
+      .catch(function(e) {
+        rtDiag = 'RedTrack ERRO: ' + (e && e.message ? e.message : 'falha na requisicao');
+        throw e;
       });
   }
 
@@ -705,6 +717,11 @@
 
   function renderCBO() {
     var hasC = hasConv();
+    var diagEl = document.getElementById('rtDiag');
+    if (diagEl) {
+      if (getRtTk() && rtDiag) { diagEl.style.display = 'block'; diagEl.textContent = rtDiag; }
+      else { diagEl.style.display = 'none'; }
+    }
     if (!cboData.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld">Nenhuma campanha CBO encontrada.</td></tr>'; return; }
     sortCBO();
     var arrow = cboSort.dir === 'asc' ? ' &#9650;' : ' &#9660;';
