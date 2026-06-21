@@ -215,7 +215,9 @@
   }
   function periodDates() {
     var now = new Date();
-    var fmt = function(d) { return d.toISOString().split('T')[0]; };
+    /* Datas em horario LOCAL (nao UTC) — senao a noite no Brasil ja vira o dia seguinte
+       e o RedTrack recebe uma data que ainda nao comecou no fuso dele -> 0 linhas. */
+    var fmt = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
     if (cboPeriod === 'today') { var t = fmt(now); return {since:t, until:t}; }
     if (cboPeriod === 'yesterday') { var y = new Date(now); y.setDate(y.getDate()-1); var ys = fmt(y); return {since:ys,until:ys}; }
     if (cboPeriod === 'last_7d') { var s7 = new Date(now); s7.setDate(s7.getDate()-7); return {since:fmt(s7),until:fmt(now)}; }
@@ -471,7 +473,7 @@
     var since = dates ? dates.since : (function(){ var d = new Date(); d.setMonth(d.getMonth()-36); return d.toISOString().split('T')[0]; })();
     /* O RedTrack trata date_to como exclusivo: um intervalo de 1 dia (Hoje/Ontem) vem vazio.
        Somamos +1 dia na data final para incluir o dia corrente. */
-    var untilInc = (function(){ var d = new Date(until + 'T00:00:00'); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; })();
+    var untilInc = (function(){ var d = new Date(until + 'T00:00:00'); d.setDate(d.getDate()+1); return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); })();
     /* Sub3 no RedTrack = campaign_id do Meta. Agrupamos por sub3 para casar 1:1. */
     var url = RT_API + '/report?api_key=' + encodeURIComponent(tk) + '&group=sub3&date_from=' + since + '&date_to=' + untilInc + '&per=1000';
     return fetch(url, { headers: {'Accept':'application/json'} })
