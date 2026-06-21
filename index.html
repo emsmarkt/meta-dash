@@ -83,6 +83,7 @@
           <tr>
             <th rowspan="2">Campanha</th>
             <th rowspan="2">Conta</th>
+            <th rowspan="2" title="Limite de gastos da conta (spend cap)">Limite Conta</th>
             <th rowspan="2">Status</th>
             <th rowspan="2">Orc. Vitalicio</th>
             <th rowspan="2">Gasto Total</th>
@@ -113,7 +114,7 @@
             <th style="cursor:pointer;user-select:none" data-sort="roas" id="thRoas">ROAS &#8645;</th>
           </tr>
         </thead>
-        <tbody id="cboTbody"><tr><td colspan="26" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
+        <tbody id="cboTbody"><tr><td colspan="27" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -555,13 +556,13 @@
     if (!tks.length) { alert('Configure um token primeiro em Tokens.'); return; }
     var spinEl = document.getElementById('spinCBO');
     if (spinEl) spinEl.style.display = 'inline-block';
-    document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando contas ativas...</td></tr>';
+    document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld"><span class="spin"></span>Buscando contas ativas...</td></tr>';
     var map = {};
     var chain = Promise.resolve();
     tks.forEach(function(tk) {
       chain = chain.then(function() {
         /* fjPaged segue a paginacao — antes pegava so a 1a pagina e faltavam contas. */
-        return fjPaged(API+'/me/adaccounts?fields=name,account_status&limit=100&access_token='+tk).then(function(list) {
+        return fjPaged(API+'/me/adaccounts?fields=name,account_status,spend_cap,daily_spend_limit&limit=100&access_token='+tk).then(function(list) {
           list.forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
         }).catch(function(e) { console.warn(e); });
       });
@@ -569,8 +570,8 @@
     chain.then(function() {
       /* Inclui contas nao-ativas tambem (status 2 bloqueada, 3 pendencia) para dar visibilidade. */
       var accounts = Object.values(map);
-      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#f85149">Nenhuma conta encontrada.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
-      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando campanhas CBO em '+accounts.length+' contas...</td></tr>';
+      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld" style="color:#f85149">Nenhuma conta encontrada.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
+      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld"><span class="spin"></span>Buscando campanhas CBO em '+accounts.length+' contas...</td></tr>';
       var camps = [];
       var idx = 0;
       function nextBatch() {
@@ -597,21 +598,21 @@
               if (es === 'DELETED' || es === 'ARCHIVED') return false; /* nao mostrar excluidas/arquivadas */
               return c.name && c.name.toUpperCase().indexOf('CBO') >= 0 && c.lifetime_budget;
             }).forEach(function(c) {
-              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; camps.push(c);
+              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; c._acctLimit = (acc.daily_spend_limit && acc.daily_spend_limit !== '0') ? acc.daily_spend_limit : ((acc.spend_cap && acc.spend_cap !== '0') ? acc.spend_cap : null); camps.push(c);
             });
           }).catch(function(){});
         })).then(nextBatch);
       }
       return nextBatch();
     }).catch(function(e) {
-      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#f85149">Erro: '+(e&&e.message?e.message:'desconhecido')+'</td></tr>';
+      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld" style="color:#f85149">Erro: '+(e&&e.message?e.message:'desconhecido')+'</td></tr>';
       if (spinEl) spinEl.style.display='none';
     });
   }
 
   function fetchCBOSpend(camps) {
     if (!camps.length) {
-      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld">Nenhuma campanha CBO encontrada nas contas ativas.</td></tr>';
+      document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld">Nenhuma campanha CBO encontrada nas contas ativas.</td></tr>';
       var spinEl = document.getElementById('spinCBO'); if (spinEl) spinEl.style.display='none';
       return Promise.resolve();
     }
@@ -624,7 +625,7 @@
     var sinceD = new Date(); sinceD.setMonth(sinceD.getMonth() - 36);
     var sinceDay = sinceD.toISOString().split('T')[0];
     var totalRange = encodeURIComponent(JSON.stringify({ since: sinceDay, until: untilDay }));
-    document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Carregando metricas de '+camps.length+' campanhas CBO ('+periodLabel()+')...</td></tr>';
+    document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld"><span class="spin"></span>Carregando metricas de '+camps.length+' campanhas CBO ('+periodLabel()+')...</td></tr>';
     var idx = 0;
     function nextBatch() {
       if (idx >= camps.length) {
@@ -705,7 +706,7 @@
 
   function renderCBO() {
     var hasC = hasConv();
-    if (!cboData.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld">Nenhuma campanha CBO encontrada.</td></tr>'; return; }
+    if (!cboData.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="27" class="ld">Nenhuma campanha CBO encontrada.</td></tr>'; return; }
     sortCBO();
     var arrow = cboSort.dir === 'asc' ? ' &#9650;' : ' &#9660;';
     var thV = document.getElementById('thVendas'); if (thV) thV.innerHTML = 'Vendas' + (cboSort.key==='sales'?arrow:' &#8645;');
@@ -759,6 +760,7 @@
       return '<tr data-cbo="'+i+'" data-status="'+st.group+'" data-error="'+(st.isError?'1':'')+'" data-name="'+camp.name.toLowerCase().replace(/"/g,'&quot;')+'">' +
         '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
         '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
+        '<td style="font-size:12px;color:#58a6ff">'+(camp._acctLimit ? fmtCents(camp._acctLimit) : '<span style="color:#6e7681">Sem limite</span>')+'</td>' +
         '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'</td>' +
         '<td style="font-size:12px">'+fmtUSD(lb)+'</td>' +
         '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
@@ -803,7 +805,7 @@
     var tRoas = T.sp>0 ? (T.fat/T.sp) : 0;
     var totalsRow = '<tr style="background:#0d1117;font-weight:600;border-top:2px solid #30363d">' +
       '<td style="color:#f0f6fc">TOTAL ('+cboData.length+' camp.)</td>' +
-      '<td></td><td></td>' +
+      '<td></td><td></td><td></td>' +
       '<td style="color:#f0f6fc">'+fmtUSD(T.lb)+'</td>' +
       '<td style="color:#8b949e">'+fmtUSD(T.spent)+'</td>' +
       '<td style="color:#58a6ff">'+fmtUSD(T.rem)+'</td>' +
