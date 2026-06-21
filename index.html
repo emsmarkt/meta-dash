@@ -469,8 +469,11 @@
     var dates = periodDates();
     var until = dates ? dates.until : new Date().toISOString().split('T')[0];
     var since = dates ? dates.since : (function(){ var d = new Date(); d.setMonth(d.getMonth()-36); return d.toISOString().split('T')[0]; })();
+    /* O RedTrack trata date_to como exclusivo: um intervalo de 1 dia (Hoje/Ontem) vem vazio.
+       Somamos +1 dia na data final para incluir o dia corrente. */
+    var untilInc = (function(){ var d = new Date(until + 'T00:00:00'); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; })();
     /* Sub3 no RedTrack = campaign_id do Meta. Agrupamos por sub3 para casar 1:1. */
-    var url = RT_API + '/report?api_key=' + encodeURIComponent(tk) + '&group=sub3&date_from=' + since + '&date_to=' + until + '&per=1000';
+    var url = RT_API + '/report?api_key=' + encodeURIComponent(tk) + '&group=sub3&date_from=' + since + '&date_to=' + untilInc + '&per=1000';
     return fetch(url, { headers: {'Accept':'application/json'} })
       .then(function(r){ return r.json(); })
       .then(function(d) {
