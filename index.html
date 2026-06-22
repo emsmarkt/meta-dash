@@ -179,10 +179,10 @@
     cpaTarget: 185,      // teto de CPA dia normal/bom (ROAS 1.4)
     cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
     cutNoSaleSpend: 120, // gastou >= isso e 0 venda -> piso
-    cutLossSpend: 150,   // gastou >= isso e ROAS<1 -> piso
-    excRoas: 2.0,        // excepcional: ROAS >= isso ...
-    excMinSales: 2,      // ... com pelo menos N vendas -> escalar forte
+    excCpa: 100,         // excepcional: CPA < isso (US$) ...
+    excMinSales: 3,      // ... com pelo menos N vendas -> escalar forte (x5)
     scaleMult: 5,        // multiplicador de escala (baseado SO no dia de hoje; sem historico)
+    scaleUsePct: 0.7,    // SO escala se gasto de hoje >= isso do diario atual (senao multiplicar nao adianta)
     alert3dRoas: 1.0,    // AVISO (nao mexe em orcamento): ROAS dos ult. 3 dias < isso = prejuizo
     alert3dMinSpend: 150 // so avisa se gastou pelo menos isso nos 3 dias (evita ruido)
   };
@@ -836,11 +836,13 @@
       else { action = 'Aguardar (sem venda, gasto baixo)'; }
     } else if (cpa <= ceiling) {
       /* VENCEDORA: abaixo do teto de CPA. */
-      if (roas >= RULES.excRoas && sales >= RULES.excMinSales) {
-        target = Math.max(currentDailyOf(camp) * RULES.scaleMult, RULES.floorDaily);
-        action = 'ESCALAR x' + RULES.scaleMult + ' (CPA $' + Math.round(cpa) + ' / ROAS ' + roas.toFixed(2).replace('.',',') + ')'; cls = 'd-good';
+      var cur = currentDailyOf(camp);
+      if (cpa < RULES.excCpa && sales >= RULES.excMinSales && cur > 0 && sp >= RULES.scaleUsePct * cur) {
+        /* Excepcional E usando o orcamento atual -> escala x5. Se nao usa o budget, nao adianta multiplicar. */
+        target = cur * RULES.scaleMult;
+        action = 'ESCALAR x' + RULES.scaleMult + ' (CPA $' + Math.round(cpa) + ', ' + sales + ' vendas)'; cls = 'd-good';
       } else {
-        target = null; /* nao mexe */
+        target = null; /* nao mexe: ou nao e excepcional, ou ja tem orcamento de sobra */
         action = 'MANTER (CPA $' + Math.round(cpa) + ' <= $' + ceiling + ')'; cls = 'd-good';
       }
     } else {
