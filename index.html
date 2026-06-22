@@ -918,47 +918,70 @@
     if (!dateVal) { alert('Selecione uma data antes de aplicar.'); return; }
     var btn = document.getElementById('csavebtn_'+i);
     if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
-    var endTs = Math.floor(new Date(dateVal + 'T23:59:59').getTime() / 1000);
-    var endIso = new Date(endTs * 1000).toISOString();
+    /* Usa fim de dia no fuso BR (UTC-3). O stop_time/end_time do Meta aceita ISO 8601. */
+    var endIso = dateVal + 'T23:59:00-03:00';
+    var endTs = Math.floor(new Date(endIso).getTime() / 1000);
     var wantDay = dateVal; /* yyyy-mm-dd desejado */
+    var report = [];           /* mensagens detalhadas pra mostrar ao usuario */
+    var campErr = null;        /* erro exato do Meta na campanha */
+    var setTotal = 0, setOk = 0, setFails = [];
+    var dayOf = function(v){ if(!v) return null; return (typeof v === 'string') ? v.slice(0,10) : new Date(v*1000).toISOString().split('T')[0]; };
 
-    /* 1) Campanha: stop_time (+ reenvio do lifetime_budget, mesmo valor = nao reseta aprendizado).
-          Em campanhas de orcamento vitalicio o Meta costuma IGNORAR isso, por isso atualizamos
-          tambem os conjuntos abaixo. Esta etapa nao e fatal. */
+    /* 1) CAMPANHA: stop_time governa o RITMO diario em CBO vitalicio.
+          Reenvia o mesmo lifetime_budget (nao reseta aprendizado). NAO engolimos o erro. */
     var campParams = { stop_time: String(endTs) };
     if (camp.lifetime_budget) campParams.lifetime_budget = String(camp.lifetime_budget);
 
-    postForm(camp.id, camp._tk, campParams).catch(function(){ return null; })
-      /* 2) O schedule de campanhas com orcamento vitalicio vive nos conjuntos (ad sets).
-            Atualiza o end_time de cada um — e isso que muda a data real de termino. */
-      .then(function(){ return fj(API+'/'+camp.id+'/adsets?fields=id,end_time&limit=200&access_token='+camp._tk); })
+    postForm(camp.id, camp._tk, campParams)
+      .then(function(){ report.push('Campanha (stop_time): OK'); })
+      .catch(function(e){ campErr = e.message; report.push('Campanha (stop_time): RECUSADO -> ' + e.message); })
+      /* 2) CONJUNTOS (ad sets): atualiza end_time de cada um, capturando erro individual. */
+      .then(function(){ return fj(API+'/'+camp.id+'/adsets?fields=id,name,end_time&limit=200&access_token='+camp._tk); })
       .then(function(d){
         var sets = (d && d.data) || [];
-        if (!sets.length) return null;
-        return Promise.all(sets.map(function(s){ return postForm(s.id, camp._tk, { end_time: endIso }); }));
+        setTotal = sets.length;
+        if (!sets.length) { report.push('Conjuntos: nenhum retornado.'); return null; }
+        return Promise.all(sets.map(function(s){
+          return postForm(s.id, camp._tk, { end_time: endIso })
+            .then(function(){ setOk++; })
+            .catch(function(e){ setFails.push((s.name || s.id) + ': ' + e.message); });
+        }));
       })
-      /* 3) Verifica de verdade lendo a campanha de novo. */
-      .then(function(){ return fj(API+'/'+camp.id+'?fields=stop_time&access_token='+camp._tk); })
-      .then(function(v){
-        /* Le a data SEM converter fuso: stop_time string vem no fuso da conta, entao
-           pegamos os 10 primeiros chars (yyyy-mm-dd) direto. */
-        var applied = null;
-        if (v && v.stop_time) {
-          applied = (typeof v.stop_time === 'string') ? v.stop_time.slice(0,10) : new Date(v.stop_time*1000).toISOString().split('T')[0];
+      /* 3) VERIFICA lendo campanha e conjuntos de novo. */
+      .then(function(){ return Promise.all([
+        fj(API+'/'+camp.id+'?fields=stop_time&access_token='+camp._tk),
+        fj(API+'/'+camp.id+'/adsets?fields=id,end_time&limit=200&access_token='+camp._tk)
+      ]); })
+      .then(function(res){
+        var v = res[0] || {};
+        var sets = (res[1] && res[1].data) || [];
+        var campDay = dayOf(v.stop_time);
+        var campMatch = campDay && Math.abs((new Date(campDay) - new Date(wantDay)) / 86400000) <= 1;
+        var setsMatch = sets.length > 0 && sets.every(function(s){ var sd = dayOf(s.end_time); return sd && Math.abs((new Date(sd) - new Date(wantDay)) / 86400000) <= 1; });
+        if (setTotal) report.push('Conjuntos: ' + setOk + '/' + setTotal + ' atualizados.');
+        setFails.forEach(function(m){ report.push('  - conjunto FALHOU -> ' + m); });
+        camp.stop_time = v.stop_time || endTs;
+
+        if (campMatch) {
+          if (btn) { btn.textContent = 'Aplicado!'; btn.style.background = '#3fb950'; btn.style.borderColor = '#3fb950'; }
+          setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 3000);
+          return;
         }
-        camp.stop_time = (v && v.stop_time) ? v.stop_time : endTs;
-        /* Tolerancia de 1 dia (diferenca de fuso entre conta e navegador). */
-        var diffDays = applied ? Math.abs((new Date(applied) - new Date(wantDay)) / 86400000) : 0;
-        if (applied && diffDays > 1) {
-          throw new Error('O Meta registrou termino em ' + applied.split('-').reverse().join('/') + ' (esperado ' + wantDay.split('-').reverse().join('/') + '). Pode haver conjunto com outra data ou restricao da conta.');
-        }
-        if (btn) { btn.textContent = 'Aplicado!'; btn.style.background = '#3fb950'; btn.style.borderColor = '#3fb950'; }
-        setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 3000);
+        /* Campanha NAO mudou. Monta diagnostico claro com o motivo real. */
+        if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#f85149'; btn.style.borderColor = '#f85149'; }
+        setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 4000);
+        var head = 'Nao consegui mudar o RITMO da campanha "' + camp.name + '".\n'
+                 + 'Pedido: ' + wantDay.split('-').reverse().join('/')
+                 + ' | Meta manteve: ' + (campDay ? campDay.split('-').reverse().join('/') : 'desconhecida') + '\n';
+        if (campErr) head += '\nMOTIVO (Meta): ' + campErr + '\n';
+        else head += '\nO Meta aceitou a chamada mas nao alterou o stop_time da campanha (campanha vitalicia costuma travar a data quando esta perto do fim).\n';
+        if (setsMatch) head += '\nObs: os CONJUNTOS ficaram com ' + wantDay.split('-').reverse().join('/') + ', mas em CBO o ritmo segue o stop_time da CAMPANHA — por isso o diario nao muda.\n';
+        alert(head + '\n--- detalhes ---\n' + report.join('\n'));
       })
       .catch(function(e) {
         if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#f85149'; btn.style.borderColor = '#f85149'; }
-        setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 3500);
-        alert('Erro ao aplicar: ' + e.message + '\n\nVerifique se o token tem permissao ads_management.');
+        setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 4000);
+        alert('Erro ao aplicar em "' + camp.name + '":\n' + (e && e.message ? e.message : e) + '\n\n--- detalhes ---\n' + report.join('\n') + '\n\nVerifique se o token tem permissao ads_management.');
       });
   }
 
