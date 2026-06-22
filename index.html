@@ -182,7 +182,9 @@
     cutLossSpend: 150,   // gastou >= isso e ROAS<1 -> piso
     excRoas: 2.0,        // excepcional: ROAS >= isso ...
     excMinSales: 2,      // ... com pelo menos N vendas -> escalar forte
-    scaleMult: 5         // multiplicador de escala (baseado SO no dia de hoje; sem historico)
+    scaleMult: 5,        // multiplicador de escala (baseado SO no dia de hoje; sem historico)
+    alert3dRoas: 1.0,    // AVISO (nao mexe em orcamento): ROAS dos ult. 3 dias < isso = prejuizo
+    alert3dMinSpend: 150 // so avisa se gastou pelo menos isso nos 3 dias (evita ruido)
   };
   /* IMPORTANTE: toda a regra usa SOMENTE o acumulado de HOJE (00h-23h59 fuso BR).
      Cada dia e um dia — nunca puxa historico de dias anteriores. */
@@ -679,8 +681,12 @@
     function nextBatch() {
       if (idx >= camps.length) {
         return fetchConversions(camps).then(function() {
-          cboData = camps; renderCBO();
-          var sp = document.getElementById('spinCBO'); if (sp) sp.style.display='none';
+          /* Aviso de prejuizo 3d so na carga inicial (nao a cada troca de periodo). */
+          var need3d = camps.some(function(c){ return c._alert3d === undefined; });
+          return (need3d ? fetchAlert3d(camps) : Promise.resolve()).then(function(){
+            cboData = camps; renderCBO();
+            var sp = document.getElementById('spinCBO'); if (sp) sp.style.display='none';
+          });
         });
       }
       var batch = camps.slice(idx, idx+6); idx += 6;
@@ -750,6 +756,41 @@
       var sa = sortVal(a,'sales'), sb = sortVal(b,'sales');
       if (sa !== sb) return sb - sa;
       return sortVal(b,'roas') - sortVal(a,'roas');
+    });
+  }
+
+  /* AVISO (separado da regra diaria): prejuizo nos ultimos 3 dias -> "Matar campanha".
+     Nao mexe em orcamento. Usa Meta (gasto 3d) + RedTrack (vendas 3d). */
+  function fetchAlert3d(camps) {
+    var rtTk = getRtTk();
+    var since = brDatePlus(-2), until = brDatePlus(0), untilInc = brDatePlus(1);
+    var range = encodeURIComponent(JSON.stringify({ since: since, until: until }));
+    var rtP = Promise.resolve({});
+    if (rtTk) {
+      var url = RT_API + '/report?api_key=' + encodeURIComponent(rtTk) + '&group=sub3&date_from=' + since + '&date_to=' + untilInc + '&per=1000';
+      rtP = fetch(url, { headers: {'Accept':'application/json'} }).then(function(r){ return r.json(); }).then(function(d){
+        var rows = d.items || d.data || d.report || (Array.isArray(d) ? d : []); if (!Array.isArray(rows)) rows = [];
+        var pType = getRtPType() || '1', by = {};
+        rows.forEach(function(row){ if (row.sub3 != null && row.sub3 !== '') by[String(row.sub3)] = parseInt(row['convtype'+pType]) || 0; });
+        return by;
+      }).catch(function(){ return {}; });
+    }
+    return rtP.then(function(salesBy){
+      var idx = 0;
+      function batch(){
+        if (idx >= camps.length) return;
+        var b = camps.slice(idx, idx+6); idx += 6;
+        return Promise.all(b.map(function(c){
+          return fj(API+'/'+c.id+'/insights?fields=spend&time_range='+range+'&access_token='+c._tk).then(function(d){
+            var sp = (d.data && d.data[0]) ? (parseFloat(d.data[0].spend)||0) : 0;
+            var sales = salesBy[String(c.id)] || 0;
+            var roas = sp > 0 ? (sales*260)/sp : 0;
+            c._spend3d = sp; c._sales3d = sales; c._roas3d = roas;
+            c._alert3d = (sp >= RULES.alert3dMinSpend && roas < RULES.alert3dRoas);
+          }).catch(function(){ c._alert3d = false; });
+        })).then(batch);
+      }
+      return batch();
     });
   }
 
@@ -893,7 +934,7 @@
       return '<tr data-cbo="'+i+'" data-status="'+st.group+'" data-error="'+(st.isError?'1':'')+'" data-name="'+camp.name.toLowerCase().replace(/"/g,'&quot;')+'">' +
         '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
         '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
-        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'</td>' +
+        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+(camp._alert3d?'<div style="font-size:10px;color:#f85149;margin-top:2px;font-weight:600" title="ROAS dos ultimos 3 dias abaixo de '+RULES.alert3dRoas+'">&#9888; Matar campanha &mdash; prejuizo nos ult. 3 dias (ROAS '+(camp._roas3d||0).toFixed(2).replace('.',',')+')</div>':'')+'</td>' +
         '<td style="font-size:12px">'+fmtUSD(lb)+'</td>' +
         '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
         '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+fmtUSD(remaining)+'</td>' +
