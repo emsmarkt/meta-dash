@@ -67,6 +67,13 @@
         <button class="pill on" data-period="last_7d" id="p7d">7 dias</button>
         <button class="pill" data-period="last_30d" id="p30d">30 dias</button>
         <button class="pill" data-period="lifetime" id="pMax">Maximo</button>
+        <button class="pill" data-period="custom" id="pCustom">Personalizado</button>
+        <span id="customRange" style="display:none;align-items:center;gap:5px">
+          <input type="date" id="cboFrom" class="cbo-date" style="width:140px">
+          <span style="color:#6e7681;font-size:12px">a</span>
+          <input type="date" id="cboTo" class="cbo-date" style="width:140px">
+          <button class="save-btn" id="cboApplyRange">Aplicar período</button>
+        </span>
       </div>
       <div class="period-bar">
         <span style="font-size:12px;color:#6e7681;margin-right:2px">Status:</span>
@@ -159,6 +166,7 @@
   var curAcctF = 'all';
   var curTab = 'contas';
   var cboPeriod = 'last_7d';
+  var cboCustomFrom = '', cboCustomTo = '';
   var cboStatus = 'all';
   var cboSort = { key: 'sales', dir: 'desc' };
   var rtDiag = '';
@@ -210,6 +218,7 @@
     return parseFloat(d.data[0].spend) || 0;
   }
   function periodLabel() {
+    if (cboPeriod === 'custom') return (cboCustomFrom && cboCustomTo) ? (cboCustomFrom.split('-').reverse().join('/')+' a '+cboCustomTo.split('-').reverse().join('/')) : 'Personalizado';
     var m = {today:'Hoje',yesterday:'Ontem',last_7d:'7 dias',last_30d:'30 dias',lifetime:'Maximo'};
     return m[cboPeriod] || cboPeriod;
   }
@@ -222,6 +231,7 @@
     if (cboPeriod === 'yesterday') { var y = new Date(now); y.setUTCDate(y.getUTCDate()-1); var ys = fmt(y); return {since:ys,until:ys}; }
     if (cboPeriod === 'last_7d') { var s7 = new Date(now); s7.setUTCDate(s7.getUTCDate()-7); return {since:fmt(s7),until:fmt(now)}; }
     if (cboPeriod === 'last_30d') { var s30 = new Date(now); s30.setUTCDate(s30.getUTCDate()-30); return {since:fmt(s30),until:fmt(now)}; }
+    if (cboPeriod === 'custom' && cboCustomFrom && cboCustomTo) { return {since:cboCustomFrom, until:cboCustomTo}; }
     return null;
   }
 
@@ -634,6 +644,11 @@
     }
     var isLifetime = (cboPeriod === 'lifetime');
     var activePeriod = cboPeriod;
+    /* Parametro de janela do periodo: preset (hoje/ontem/7/30) ou time_range (personalizado). */
+    var _pd = periodDates();
+    var periodParam = (cboPeriod === 'custom' && _pd)
+      ? ('time_range=' + encodeURIComponent(JSON.stringify({ since: _pd.since, until: _pd.until })))
+      : ('date_preset=' + activePeriod);
     /* date_preset=lifetime retorna vazio em algumas campanhas. Usamos um time_range,
        mas o Meta so aceita ate ~37 meses atras (time_range maior FALHA e volta vazio),
        por isso a janela e de 36 meses — cobre o acumulado real das campanhas. */
@@ -658,7 +673,7 @@
         var calls = isLifetime
           ? [fj(totalUrl), fj(adsUrl)]
           : [fj(totalUrl),
-             fj(API+'/'+c.id+'/insights?fields=spend,clicks,cpc&date_preset='+activePeriod+'&access_token='+c._tk),
+             fj(API+'/'+c.id+'/insights?fields=spend,clicks,cpc&'+periodParam+'&access_token='+c._tk),
              fj(adsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
@@ -910,6 +925,29 @@
       });
   }
 
+  /* Ordena os tokens: o preferido (da campanha) primeiro, depois todos os outros. */
+  function metaTokensOrdered(preferred) {
+    var all = getTks(), out = [];
+    if (preferred) out.push(preferred);
+    all.forEach(function(t){ if (t && t !== preferred) out.push(t); });
+    return out.length ? out : (preferred ? [preferred] : []);
+  }
+  /* Tenta a operacao com cada token ate um funcionar. fn(tk) deve REJEITAR em erro.
+     Retorna {result, tk} no sucesso; rejeita com o ultimo erro se todos falharem. */
+  function withTokenFallback(preferred, fn) {
+    var toks = metaTokensOrdered(preferred), i = 0, lastErr = null;
+    function attempt() {
+      if (i >= toks.length) return Promise.reject(lastErr || new Error('Nenhum token conseguiu executar a operacao.'));
+      var tk = toks[i++];
+      return fn(tk).then(function(r){ return { result: r, tk: tk }; }, function(e){ lastErr = e; return attempt(); });
+    }
+    return attempt();
+  }
+  /* Leitura GET que LANCA erro (pra entrar no fallback de token). */
+  function fjThrow(url) {
+    return fj(url).then(function(d){ if (d && d.error) throw new Error(d.error.message || 'erro de leitura'); return d; });
+  }
+
   function saveCBODate(i) {
     var camp = cboData[i];
     if (!camp) return;
@@ -932,25 +970,31 @@
     var campParams = { stop_time: String(endTs) };
     if (camp.lifetime_budget) campParams.lifetime_budget = String(camp.lifetime_budget);
 
-    postForm(camp.id, camp._tk, campParams)
-      .then(function(){ report.push('Campanha (stop_time): OK'); })
-      .catch(function(e){ campErr = e.message; report.push('Campanha (stop_time): RECUSADO -> ' + e.message); })
-      /* 2) CONJUNTOS (ad sets): atualiza end_time de cada um, capturando erro individual. */
-      .then(function(){ return fj(API+'/'+camp.id+'/adsets?fields=id,name,end_time&limit=200&access_token='+camp._tk); })
+    /* Token efetivo: comeca pelo da campanha e, em erro, cai pros outros automaticamente.
+       O primeiro que funcionar vira o token usado no resto da operacao. */
+    var useTk = camp._tk;
+    var origTk = camp._tk;
+
+    withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, campParams); })
+      .then(function(r){ useTk = r.tk; camp._tk = r.tk; report.push('Campanha (stop_time): OK' + (r.tk !== origTk ? ' (via token alternativo)' : '')); })
+      .catch(function(e){ campErr = e.message; report.push('Campanha (stop_time): RECUSADO por todos os tokens -> ' + e.message); })
+      /* 2) CONJUNTOS (ad sets): lista com fallback de token, depois atualiza cada end_time (tambem com fallback). */
+      .then(function(){ return withTokenFallback(useTk, function(tk){ return fjThrow(API+'/'+camp.id+'/adsets?fields=id,name,end_time&limit=200&access_token='+tk); }); })
+      .then(function(r){ useTk = r.tk; return r.result; }, function(){ return null; })
       .then(function(d){
         var sets = (d && d.data) || [];
         setTotal = sets.length;
         if (!sets.length) { report.push('Conjuntos: nenhum retornado.'); return null; }
         return Promise.all(sets.map(function(s){
-          return postForm(s.id, camp._tk, { end_time: endIso })
-            .then(function(){ setOk++; })
+          return withTokenFallback(useTk, function(tk){ return postForm(s.id, tk, { end_time: endIso }); })
+            .then(function(r){ useTk = r.tk; setOk++; })
             .catch(function(e){ setFails.push((s.name || s.id) + ': ' + e.message); });
         }));
       })
-      /* 3) VERIFICA lendo campanha e conjuntos de novo. */
+      /* 3) VERIFICA lendo campanha e conjuntos de novo (com fallback). */
       .then(function(){ return Promise.all([
-        fj(API+'/'+camp.id+'?fields=stop_time&access_token='+camp._tk),
-        fj(API+'/'+camp.id+'/adsets?fields=id,end_time&limit=200&access_token='+camp._tk)
+        withTokenFallback(useTk, function(tk){ return fjThrow(API+'/'+camp.id+'?fields=stop_time&access_token='+tk); }).then(function(r){return r.result;}).catch(function(){return {};}),
+        withTokenFallback(useTk, function(tk){ return fjThrow(API+'/'+camp.id+'/adsets?fields=id,end_time&limit=200&access_token='+tk); }).then(function(r){return r.result;}).catch(function(){return {};})
       ]); })
       .then(function(res){
         var v = res[0] || {};
@@ -1034,12 +1078,32 @@
       cboPeriod = this.dataset.period;
       document.querySelectorAll('#mdb [data-period]').forEach(function(b) { b.classList.remove('on'); });
       this.classList.add('on');
+      var cr = document.getElementById('customRange');
+      if (cboPeriod === 'custom') {
+        /* Mostra o calendario e espera o usuario clicar "Aplicar periodo". */
+        if (cr) cr.style.display = 'inline-flex';
+        var fEl = document.getElementById('cboFrom'), tEl = document.getElementById('cboTo');
+        if (fEl && !fEl.value) { var d7 = new Date(Date.now()-3*3600*1000); d7.setUTCDate(d7.getUTCDate()-7); fEl.value = d7.toISOString().split('T')[0]; }
+        if (tEl && !tEl.value) { tEl.value = new Date(Date.now()-3*3600*1000).toISOString().split('T')[0]; }
+        return;
+      }
+      if (cr) cr.style.display = 'none';
       if (cboData.length) {
         var spinEl = document.getElementById('spinCBO');
         if (spinEl) spinEl.style.display = 'inline-block';
         fetchCBOSpend(cboData.slice());
       }
     });
+  });
+  var applyRangeBtn = document.getElementById('cboApplyRange');
+  if (applyRangeBtn) applyRangeBtn.addEventListener('click', function() {
+    var f = (document.getElementById('cboFrom')||{}).value, t = (document.getElementById('cboTo')||{}).value;
+    if (!f || !t) { alert('Selecione data inicial e final.'); return; }
+    if (f > t) { var tmp = f; f = t; t = tmp; }
+    cboCustomFrom = f; cboCustomTo = t; cboPeriod = 'custom';
+    if (!cboData.length) { alert('Clique em "Carregar campanhas CBO" primeiro.'); return; }
+    var spinEl = document.getElementById('spinCBO'); if (spinEl) spinEl.style.display = 'inline-block';
+    fetchCBOSpend(cboData.slice());
   });
 
   document.querySelectorAll('#mdb .tab-btn').forEach(function(btn) {
