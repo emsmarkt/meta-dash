@@ -168,6 +168,22 @@
   var cboPeriod = 'last_7d';
   var cboCustomFrom = '', cboCustomTo = '';
   var cboStatus = 'all';
+
+  /* ===== CONFIG DAS REGRAS (ajuste aqui = muda em todo lugar) =====
+     Mesmo motor usado no dashboard (Sugestao + botao Aplicar) e no Cloudflare Worker. */
+  var RULES = {
+    dayGood: 1.6,        // humor do dia: ROAS combinado >= isso = dia BOM
+    dayOk: 1.2,          // entre dayOk e dayGood = NORMAL; abaixo = RUIM
+    minSpendJudge: 100,  // so julga campanha apos esse gasto no dia (US$)
+    floorDaily: 100,     // piso de orcamento diario (US$)
+    cpaTarget: 185,      // teto de CPA dia normal/bom (ROAS 1.4)
+    cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
+    cutNoSaleSpend: 120, // gastou >= isso e 0 venda -> piso
+    cutLossSpend: 150,   // gastou >= isso e ROAS<1 -> piso
+    excRoas: 2.0,        // excepcional: ROAS >= isso ...
+    excMinSales: 2,      // ... com pelo menos N vendas -> escalar forte
+    scaleMult: 5         // multiplicador de escala (v1; v2 vai a 10 c/ historico da conta)
+  };
   var cboSort = { key: 'sales', dir: 'desc' };
   var rtDiag = '';
   var timer = null;
@@ -735,8 +751,70 @@
     });
   }
 
+  /* ===== MOTOR DE REGRAS ===== */
+  function brDatePlus(days) {
+    var d = new Date(Date.now() - 3*3600*1000);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.getUTCFullYear() + '-' + ('0'+(d.getUTCMonth()+1)).slice(-2) + '-' + ('0'+d.getUTCDate()).slice(-2);
+  }
+  function daysLeftOf(camp) {
+    if (!camp.stop_time) return 0;
+    var stopD = typeof camp.stop_time === 'number' ? new Date(camp.stop_time*1000) : new Date(camp.stop_time);
+    var todayD = new Date(); todayD.setHours(0,0,0,0);
+    var d = Math.ceil((stopD - todayD) / 86400000);
+    return d > 0 ? d : 0;
+  }
+  function remainingOf(camp) { return (parseFloat(camp.lifetime_budget)/100) - (camp._spend || 0); }
+  function currentDailyOf(camp) { var dl = daysLeftOf(camp), rem = remainingOf(camp); return (dl>0 && rem>0) ? rem/dl : 0; }
+  function computeDayMood() {
+    var rev = 0, spend = 0;
+    cboData.forEach(function(c){ var s = (c._conv ? c._conv.sales : 0) || 0; rev += s*260; spend += c._periodSpend || 0; });
+    var r = spend > 0 ? rev/spend : 0;
+    return { roas: r, mood: (r >= RULES.dayGood ? 'good' : (r >= RULES.dayOk ? 'normal' : 'bad')) };
+  }
+  /* Retorna {action, cls, target (diario US$ ou null), newEnd (yyyy-mm-dd ou null)} */
+  function suggestRule(camp, mood) {
+    var sp = camp._periodSpend || 0;
+    var sales = (camp._conv ? camp._conv.sales : 0) || 0;
+    var roas = sp > 0 ? (sales*260)/sp : 0;
+    var rem = remainingOf(camp);
+    var target = null, action = '', cls = 'd-warn';
+
+    if (sp < RULES.minSpendJudge) {
+      action = 'Coletando (gasto < $' + RULES.minSpendJudge + ')';
+    } else if (sales >= RULES.excMinSales && roas >= RULES.excRoas) {
+      target = Math.max(currentDailyOf(camp) * RULES.scaleMult, RULES.floorDaily);
+      action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS ' + roas.toFixed(2).replace('.',',') + ')'; cls = 'd-good';
+    } else if (mood === 'bad') {
+      if (roas >= 1.4) { target = currentDailyOf(camp); action = 'Manter (dia ruim, mas vende)'; cls = 'd-warn'; }
+      else { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (dia ruim)'; cls = 'd-bad'; }
+    } else if (sales === 0) {
+      if (sp >= RULES.cutNoSaleSpend) { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (sem venda)'; cls = 'd-bad'; }
+      else { action = 'Aguardar (sem venda, gasto baixo)'; }
+    } else if (roas < 1.0 && sp >= RULES.cutLossSpend) {
+      target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS < 1)'; cls = 'd-bad';
+    } else {
+      var ceil = (mood === 'good' && sales >= 2) ? RULES.cpaRopeGood : RULES.cpaTarget;
+      target = Math.max(ceil * sales, RULES.floorDaily);
+      action = 'Teto CPA $' + ceil + ' -> diario ~$' + Math.round(target); cls = 'd-warn';
+    }
+    var newEnd = null;
+    if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
+    return { action: action, cls: cls, target: target, newEnd: newEnd };
+  }
+
+  function applyRuleSuggestion(i) {
+    var camp = cboData[i];
+    if (!camp || !camp._sugEnd) { alert('Sem sugestao aplicavel para esta campanha.'); return; }
+    var di = document.getElementById('cnewdate_'+i);
+    if (di) di.value = camp._sugEnd;
+    saveCBODate(i);
+  }
+
   function renderCBO() {
     var hasC = hasConv();
+    var isToday = (cboPeriod === 'today');
+    var dayMoodObj = isToday ? computeDayMood() : null;
     var diagEl = document.getElementById('rtDiag');
     if (diagEl) {
       if (getRtTk() && rtDiag) { diagEl.style.display = 'block'; diagEl.textContent = rtDiag; }
@@ -779,8 +857,18 @@
         fatTxt = fatNum > 0 ? fmtUSD(fatNum) : '---';
         lucroTxt = (fatNum > 0 || sp > 0) ? '<span class="'+(lucroNum>=0?'d-good':'d-bad')+'">'+fmtUSD(lucroNum)+'</span>' : '---';
         roasTxt = roasNum > 0 ? '<span class="'+(roasNum>=1.4?'d-good':(roasNum>=1.2?'d-warn':'d-bad'))+'">'+roasNum.toFixed(2).replace('.',',')+'</span>' : '---';
-        var sug = suggestBudget(roasNum, sales, sp);
-        sugTxt = '<span class="'+sug.cls+'" style="font-size:11px;font-weight:600">'+sug.txt+'</span>';
+        if (isToday) {
+          var rule = suggestRule(camp, dayMoodObj.mood);
+          camp._sugEnd = rule.newEnd;
+          sugTxt = '<span class="'+rule.cls+'" style="font-size:11px;font-weight:600">'+rule.action+'</span>'
+                 + (rule.newEnd ? ('<div style="font-size:10px;color:#8b949e;margin-top:2px">termino '+rule.newEnd.split('-').reverse().join('/')+'</div>'
+                      + '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px">Aplicar regra</button>') : '');
+        } else {
+          camp._sugEnd = null;
+          var sug = suggestBudget(roasNum, sales, sp);
+          sugTxt = '<span class="'+sug.cls+'" style="font-size:11px;font-weight:600">'+sug.txt+'</span>'
+                 + '<div style="font-size:10px;color:#6e7681;margin-top:2px">(regras so em "Hoje")</div>';
+        }
       }
       var diarioMeta = '---', initDays = '---', initEnd = '---';
       if (camp.stop_time) {
@@ -867,7 +955,17 @@
       if (dateInp) dateInp.addEventListener('change', function() { calcCBORow(i, 'date'); });
       var btn = document.getElementById('csavebtn_'+i);
       if (btn) btn.addEventListener('click', function() { saveCBODate(i); });
+      var sbtn = document.getElementById('csug_'+i);
+      if (sbtn) sbtn.addEventListener('click', function() { applyRuleSuggestion(i); });
     });
+    /* Humor do dia na faixa de diagnostico */
+    var diag2 = document.getElementById('rtDiag');
+    if (diag2 && isToday && dayMoodObj) {
+      var moodTxt = { good:'BOM', normal:'NORMAL', bad:'RUIM' }[dayMoodObj.mood];
+      var moodLine = 'Humor do dia: ' + moodTxt + ' (ROAS combinado ' + dayMoodObj.roas.toFixed(2).replace('.',',') + ')';
+      diag2.style.display = 'block';
+      diag2.textContent = (rtDiag ? rtDiag + '  |  ' : '') + moodLine;
+    }
     applyCboFilters();
   }
 
