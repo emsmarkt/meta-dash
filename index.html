@@ -182,8 +182,10 @@
     cutLossSpend: 150,   // gastou >= isso e ROAS<1 -> piso
     excRoas: 2.0,        // excepcional: ROAS >= isso ...
     excMinSales: 2,      // ... com pelo menos N vendas -> escalar forte
-    scaleMult: 5         // multiplicador de escala (v1; v2 vai a 10 c/ historico da conta)
+    scaleMult: 5         // multiplicador de escala (baseado SO no dia de hoje; sem historico)
   };
+  /* IMPORTANTE: toda a regra usa SOMENTE o acumulado de HOJE (00h-23h59 fuso BR).
+     Cada dia e um dia — nunca puxa historico de dias anteriores. */
   var cboSort = { key: 'sales', dir: 'desc' };
   var rtDiag = '';
   var timer = null;
@@ -772,31 +774,38 @@
     var r = spend > 0 ? rev/spend : 0;
     return { roas: r, mood: (r >= RULES.dayGood ? 'good' : (r >= RULES.dayOk ? 'normal' : 'bad')) };
   }
-  /* Retorna {action, cls, target (diario US$ ou null), newEnd (yyyy-mm-dd ou null)} */
+  /* Retorna {action, cls, target (diario US$ ou null), newEnd (yyyy-mm-dd ou null)}
+     Juiz principal = CPA ACUMULADO do dia vs teto. Abaixo do teto = campanha boa -> MANTER
+     (nao corta nem mexe, mesmo que tenha gastado num burst sem venda na ultima hora).
+     So corta/limita quem esta ACIMA do teto ou sem venda. */
   function suggestRule(camp, mood) {
     var sp = camp._periodSpend || 0;
     var sales = (camp._conv ? camp._conv.sales : 0) || 0;
     var roas = sp > 0 ? (sales*260)/sp : 0;
+    var cpa = sales > 0 ? sp/sales : Infinity;
     var rem = remainingOf(camp);
+    var ceiling = (mood === 'good' && sales >= 2) ? RULES.cpaRopeGood : RULES.cpaTarget;
     var target = null, action = '', cls = 'd-warn';
 
     if (sp < RULES.minSpendJudge) {
       action = 'Coletando (gasto < $' + RULES.minSpendJudge + ')';
-    } else if (sales >= RULES.excMinSales && roas >= RULES.excRoas) {
-      target = Math.max(currentDailyOf(camp) * RULES.scaleMult, RULES.floorDaily);
-      action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS ' + roas.toFixed(2).replace('.',',') + ')'; cls = 'd-good';
-    } else if (mood === 'bad') {
-      if (roas >= 1.4) { target = currentDailyOf(camp); action = 'Manter (dia ruim, mas vende)'; cls = 'd-warn'; }
-      else { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (dia ruim)'; cls = 'd-bad'; }
     } else if (sales === 0) {
-      if (sp >= RULES.cutNoSaleSpend) { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (sem venda)'; cls = 'd-bad'; }
+      /* Sem venda: se ja gastou o suficiente, corta p/ piso (nao arrisca o rebote). */
+      if (sp >= RULES.cutNoSaleSpend) { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (sem venda, $' + Math.round(sp) + ' gastos)'; cls = 'd-bad'; }
       else { action = 'Aguardar (sem venda, gasto baixo)'; }
-    } else if (roas < 1.0 && sp >= RULES.cutLossSpend) {
-      target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS < 1)'; cls = 'd-bad';
+    } else if (cpa <= ceiling) {
+      /* VENCEDORA: abaixo do teto de CPA. */
+      if (roas >= RULES.excRoas && sales >= RULES.excMinSales) {
+        target = Math.max(currentDailyOf(camp) * RULES.scaleMult, RULES.floorDaily);
+        action = 'ESCALAR x' + RULES.scaleMult + ' (CPA $' + Math.round(cpa) + ' / ROAS ' + roas.toFixed(2).replace('.',',') + ')'; cls = 'd-good';
+      } else {
+        target = null; /* nao mexe */
+        action = 'MANTER (CPA $' + Math.round(cpa) + ' <= $' + ceiling + ')'; cls = 'd-good';
+      }
     } else {
-      var ceil = (mood === 'good' && sales >= 2) ? RULES.cpaRopeGood : RULES.cpaTarget;
-      target = Math.max(ceil * sales, RULES.floorDaily);
-      action = 'Teto CPA $' + ceil + ' -> diario ~$' + Math.round(target); cls = 'd-warn';
+      /* CPA acima do teto. */
+      if (mood === 'bad') { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (CPA $' + Math.round(cpa) + ' > $' + ceiling + ', dia ruim)'; cls = 'd-bad'; }
+      else { target = Math.max(RULES.floorDaily, RULES.cpaTarget * sales); action = 'LIMITAR (CPA $' + Math.round(cpa) + ' > $' + ceiling + ') -> diario ~$' + Math.round(target); cls = 'd-bad'; }
     }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
