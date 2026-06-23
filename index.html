@@ -1,4 +1,10 @@
 <style>html,body{background:#0d1117!important;margin:0;padding:0}*{box-sizing:border-box;margin:0;padding:0}#mdb{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#0d1117;min-height:100vh;color:#c9d1d9;padding:20px 28px;position:relative;left:50%;right:50%;margin-left:-50vw;margin-right:-50vw;width:100vw}#mdb .hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 0 18px;border-bottom:1px solid #21262d;margin-bottom:20px;flex-wrap:wrap;gap:10px}#mdb .hdr h1{font-size:20px;font-weight:600;color:#f0f6fc;display:flex;align-items:center;gap:10px}#mdb .dot{width:9px;height:9px;background:#3fb950;border-radius:50%;animation:mdPulse 2s infinite;flex-shrink:0}@keyframes mdPulse{0%,100%{opacity:1}50%{opacity:.4}}#mdb .hdr-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#mdb .ts{font-size:12px;color:#6e7681}#mdb .tabs{display:flex;gap:3px;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:4px}#mdb .tab-btn{background:transparent;border:none;border-radius:6px;padding:7px 18px;font-size:13px;color:#8b949e;cursor:pointer;font-family:inherit;white-space:nowrap}#mdb .tab-btn.on{background:#21262d;color:#f0f6fc}#mdb .tab-pane{display:none}#mdb .tab-pane.show{display:block}#mdb .btn{background:#21262d;border:1px solid #30363d;border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px;color:#c9d1d9;display:inline-flex;align-items:center;gap:6px;font-family:inherit}#mdb .btn:hover{background:#30363d;color:#f0f6fc}#mdb .btn-blue{background:#1f6feb;border-color:#388bfd;color:#fff}#mdb .btn-blue:hover{background:#388bfd}#mdb .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}#mdb .mc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 16px}#mdb .mc-l{font-size:12px;color:#8b949e;margin-bottom:5px}#mdb .mc-v{font-size:26px;font-weight:600;color:#f0f6fc}#mdb .mc-s{font-size:12px;color:#6e7681;margin-top:3px}#mdb .filters{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap;align-items:center}#mdb .pill{font-size:12.5px;padding:5px 12px;border-radius:20px;border:1px solid #30363d;cursor:pointer;color:#8b949e;background:transparent;white-space:nowrap;font-family:inherit;user-select:none}#mdb .pill.on{background:#21262d;color:#f0f6fc;border-color:#58a6ff}#mdb .srch{flex:1;min-width:140px;max-width:220px;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 11px;font-size:13px;color:#c9d1d9;outline:none;font-family:inherit}#mdb .srch:focus{border-color:#58a6ff}#mdb .tbl-wrap{background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:auto;max-height:64vh}#mdb table{width:100%;border-collapse:collapse;font-size:13px}#mdb th{font-weight:500;color:#8b949e;font-size:12px;padding:10px 14px;border-bottom:1px solid #21262d;text-align:left;white-space:nowrap;background:#161b22;position:sticky;top:0;z-index:1}#mdb td{padding:9px 14px;border-bottom:1px solid #21262d;white-space:nowrap;color:#c9d1d9;vertical-align:middle}#mdb tr:last-child td{border-bottom:none}#mdb tr:hover td{background:#1c2128}#mdb .badge{display:inline-block;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px}#mdb .b-gr{background:rgba(63,185,80,.15);color:#3fb950}#mdb .b-r{background:rgba(248,81,73,.15);color:#f85149}#mdb .b-a{background:rgba(210,153,34,.15);color:#d2a20a}#mdb .b-gy{background:rgba(110,118,129,.15);color:#8b949e}#mdb .b-bl{background:rgba(56,139,253,.15);color:#58a6ff}#mdb .b-p{background:rgba(188,140,255,.15);color:#bc8cff}#mdb .b-o{background:rgba(255,123,114,.15);color:#ff7b72}#mdb .ld{text-align:center;padding:44px;color:#6e7681;font-size:14px}#mdb .spin{display:inline-block;width:15px;height:15px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:mdSpin .8s linear infinite;vertical-align:-3px;margin-right:6px}@keyframes mdSpin{to{transform:rotate(360deg)}}#mdb .alert-box{background:rgba(248,81,73,.1);border-left:3px solid #f85149;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#ffa198;margin-bottom:14px}#mdb .setup-box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:32px;max-width:500px;margin:48px auto;text-align:center}#mdb .setup-box h2{color:#f0f6fc;font-size:17px;margin-bottom:10px}#mdb .setup-box p{color:#8b949e;font-size:13px;margin-bottom:20px;line-height:1.6}#mdb .setup-inp{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:11px 13px;font-size:13px;color:#c9d1d9;outline:none;font-family:monospace;margin-bottom:12px}#mdb .setup-inp:focus{border-color:#58a6ff}#mdb .cbo-info{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 18px;margin-bottom:14px;font-size:13px;color:#8b949e;line-height:1.7}#mdb .cbo-info strong{color:#f0f6fc}#mdb .cbo-inp{width:100px;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:13px;color:#c9d1d9;text-align:right;font-family:inherit}#mdb .cbo-inp:focus{outline:none;border-color:#58a6ff}#mdb .cbo-date{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:12px;color:#c9d1d9;font-family:inherit;cursor:pointer;width:136px}#mdb .cbo-date:focus{outline:none;border-color:#58a6ff}#mdb .save-btn{background:#1f6feb;border:1px solid #388bfd;border-radius:5px;padding:6px 12px;font-size:12px;color:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}#mdb .save-btn:hover{background:#388bfd}#mdb .save-btn:disabled{background:#21262d;border-color:#30363d;color:#6e7681;cursor:not-allowed}#mdb .d-good{color:#3fb950;font-weight:600;font-size:13px}#mdb .d-warn{color:#d2a20a;font-weight:600;font-size:13px}#mdb .d-bad{color:#f85149;font-weight:600;font-size:13px}#mdb .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9999;display:none;align-items:center;justify-content:center}#mdb .modal-bg.show{display:flex}#mdb .modal{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:22px;min-width:320px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto}#mdb .modal h2{font-size:15px;font-weight:600;color:#f0f6fc;margin-bottom:8px}#mdb .modal p{font-size:12px;color:#8b949e;margin-bottom:14px;line-height:1.5}#mdb .modal h3{font-size:13px;color:#8b949e;margin:16px 0 8px;border-top:1px solid #21262d;padding-top:12px}#mdb .tk-row{display:flex;align-items:center;gap:7px;margin-bottom:9px}#mdb .tk-inp{flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:12px;color:#c9d1d9;outline:none;font-family:monospace}#mdb .tk-inp:focus{border-color:#58a6ff}#mdb .tk-rm{background:none;border:none;color:#f85149;cursor:pointer;font-size:17px;line-height:1;padding:0 4px}#mdb .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}#mdb .foot-note{margin-top:10px;display:flex;justify-content:space-between;font-size:11px;color:#6e7681;flex-wrap:wrap;gap:4px}#mdb .th-group{background:#0d1117;font-size:10px;color:#6e7681;text-transform:uppercase;letter-spacing:.5px}#mdb .period-bar{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+#mdb .tgl-btn{border:none;border-radius:5px;padding:4px 9px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+#mdb .tgl-btn.tgl-on{background:rgba(248,81,73,.15);color:#f85149}
+#mdb .tgl-btn.tgl-on:hover{background:rgba(248,81,73,.28)}
+#mdb .tgl-btn.tgl-off{background:rgba(63,185,80,.15);color:#3fb950}
+#mdb .tgl-btn.tgl-off:hover{background:rgba(63,185,80,.28)}
+#mdb .tgl-btn:disabled{opacity:.5;cursor:wait}
 /* ----- Polimento geral (desktop + mobile) ----- */
 #mdb .tbl-wrap{scrollbar-width:thin;scrollbar-color:#30363d transparent}
 #mdb .tbl-wrap::-webkit-scrollbar{height:9px;width:9px}
@@ -1006,7 +1012,7 @@
       return '<tr data-cbo="'+i+'" data-status="'+st.group+'" data-error="'+(st.isError?'1':'')+'" data-name="'+camp.name.toLowerCase().replace(/"/g,'&quot;')+'">' +
         '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
         '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
-        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'</td>' +
+        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'<div style="margin-top:5px"><button class="tgl-btn '+(((camp.status||"").toUpperCase()==="ACTIVE")?"tgl-on":"tgl-off")+'" id="ctgl_'+i+'">'+(((camp.status||"").toUpperCase()==="ACTIVE")?"⏸ Pausar":"▶ Ativar")+'</button></div></td>' +
         '<td style="font-size:12px">'+fmtUSD(lb)+'</td>' +
         '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
         '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+fmtUSD(remaining)+'</td>' +
@@ -1079,6 +1085,8 @@
       if (btn) btn.addEventListener('click', function() { saveCBODate(i); });
       var sbtn = document.getElementById('csug_'+i);
       if (sbtn) sbtn.addEventListener('click', function() { applyRuleSuggestion(i); });
+      var tbtn = document.getElementById('ctgl_'+i);
+      if (tbtn) tbtn.addEventListener('click', function() { toggleCampaign(i); });
     });
     /* Humor do dia na faixa de diagnostico */
     var diag2 = document.getElementById('rtDiag');
@@ -1166,6 +1174,34 @@
   /* Leitura GET que LANCA erro (pra entrar no fallback de token). */
   function fjThrow(url) {
     return fj(url).then(function(d){ if (d && d.error) throw new Error(d.error.message || 'erro de leitura'); return d; });
+  }
+
+  /* Pausar / Ativar a campanha (igual o liga-desliga do gerenciador) — muda o status no Meta. */
+  function toggleCampaign(i) {
+    var camp = cboData[i];
+    if (!camp) return;
+    var isActive = (camp.status || '').toUpperCase() === 'ACTIVE';
+    var novo = isActive ? 'PAUSED' : 'ACTIVE';
+    if (!confirm((isActive ? 'PAUSAR' : 'ATIVAR') + ' a campanha "' + camp.name + '" no Meta?')) return;
+    var btn = document.getElementById('ctgl_' + i);
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, { status: novo }); })
+      .then(function(r){
+        camp._tk = r.tk; camp.status = novo; camp.effective_status = novo;
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = (novo === 'ACTIVE') ? '⏸ Pausar' : '▶ Ativar';
+          btn.className = 'tgl-btn ' + (novo === 'ACTIVE' ? 'tgl-on' : 'tgl-off');
+        }
+        /* atualiza o badge de status da linha */
+        renderCBO();
+      })
+      .catch(function(e){
+        if (btn) { btn.disabled = false; btn.textContent = isActive ? '⏸ Pausar' : '▶ Ativar'; }
+        var msg = (e && e.message) ? e.message : 'erro';
+        var extra = /application has been deleted|validating application|access token|OAuth|code 190/i.test(msg) ? '\n\n>>> TOKEN INVALIDO: gere um token novo p/ esse BM em ⚙ Tokens.' : '';
+        alert('Nao consegui ' + (isActive ? 'pausar' : 'ativar') + ' "' + camp.name + '":\n' + msg + extra);
+      });
   }
 
   function saveCBODate(i) {
