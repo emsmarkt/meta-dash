@@ -827,37 +827,49 @@
     var cpa = sales > 0 ? sp/sales : Infinity;
     var rem = remainingOf(camp);
     var ceiling = (mood === 'good' && sales >= 2) ? RULES.cpaRopeGood : RULES.cpaTarget;
-    var target = null, action = '', cls = 'd-warn';
+    var target = null, action = '', cls = 'd-warn', key = '';
+    var roasFmt = roas.toFixed(2).replace('.', ',');                       /* ROAS de hoje */
+    var metaRoasTxt = (260 / RULES.cpaTarget).toFixed(1).replace('.', ','); /* meta de ROAS (ex: 1,5) */
 
     if (sales === 0) {
       /* SEM VENDA: gastou o suficiente -> corta p/ piso; senao "Coletando". */
-      if (sp >= RULES.cutNoSaleSpend) { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (sem venda, $' + Math.round(sp) + ' gastos)'; cls = 'd-bad'; }
-      else { action = 'Coletando (sem venda)'; }
+      if (sp >= RULES.cutNoSaleSpend) { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (sem venda, $' + Math.round(sp) + ' gastos)'; cls = 'd-bad'; key = 'CORTAR'; }
+      else { action = 'Coletando (sem venda)'; key = 'COLETANDO'; }
     } else if (cpa <= ceiling) {
       /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
       var cur = currentDailyOf(camp);
       if (cpa < RULES.excCpa && sales >= RULES.excMinSales && cur > 0 && sp >= RULES.scaleUsePct * cur) {
         /* Excepcional E usando o orcamento -> escala x5. */
         target = cur * RULES.scaleMult;
-        action = 'ESCALAR x' + RULES.scaleMult + ' (CPA $' + Math.round(cpa) + ', ' + sales + ' vendas)'; cls = 'd-good';
+        action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS ' + roasFmt + ', ' + sales + ' vendas)'; cls = 'd-good'; key = 'ESCALAR';
       } else if (cur > 0 && cur < sp) {
         /* Vende mas o diario esta ABAIXO do que ela gastou hoje (estrangulada, ex: baixada pelo rebote)
            -> libera p/ releaseDaily e acompanhar. */
         target = RULES.releaseDaily;
-        action = 'AUMENTAR p/ $' + RULES.releaseDaily + '/dia (acompanhar — vende e esta limitada)'; cls = 'd-good';
+        action = 'AUMENTAR p/ $' + RULES.releaseDaily + '/dia (acompanhar — vende e esta limitada)'; cls = 'd-good'; key = 'AUMENTAR';
       } else {
         target = null; /* nao mexe: ou nao e excepcional, ou ja tem orcamento de sobra */
-        action = 'MANTER (CPA $' + Math.round(cpa) + ' <= $' + ceiling + ')'; cls = 'd-good';
+        action = 'MANTER (ROAS ' + roasFmt + ' >= meta ' + metaRoasTxt + ')'; cls = 'd-good'; key = 'MANTER';
       }
     } else {
       /* CPA acima do teto. */
-      if (mood === 'bad') { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (CPA $' + Math.round(cpa) + ' > $' + ceiling + ', dia ruim)'; cls = 'd-bad'; }
-      else { target = Math.max(RULES.floorDaily, RULES.cpaTarget * sales); action = 'LIMITAR (CPA $' + Math.round(cpa) + ' > $' + ceiling + ') -> diario ~$' + Math.round(target); cls = 'd-bad'; }
+      if (mood === 'bad') { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS ' + roasFmt + ' < meta ' + metaRoasTxt + ', dia ruim)'; cls = 'd-bad'; key = 'CORTAR'; }
+      else { target = Math.max(RULES.floorDaily, RULES.cpaTarget * sales); action = 'LIMITAR (ROAS ' + roasFmt + ' < meta ' + metaRoasTxt + ') -> diario ~$' + Math.round(target); cls = 'd-bad'; key = 'LIMITAR'; }
     }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
-    return { action: action, cls: cls, target: target, newEnd: newEnd };
+    /* Assinatura estavel da regra (tipo + valor alvo) p/ saber se ja foi aplicada. */
+    var sig = target ? (key + ':' + Math.round(target)) : null;
+    return { action: action, cls: cls, target: target, newEnd: newEnd, key: key, sig: sig };
   }
+  /* Registro (por dispositivo) da ultima regra aplicada em cada campanha, com hora. Reseta a cada dia. */
+  function getAppliedRule(id) {
+    try { var s = localStorage.getItem('md_rule_' + id); if (!s) return null; var o = JSON.parse(s); return (o && o.day === brDatePlus(0)) ? o : null; } catch(e) { return null; }
+  }
+  function setAppliedRule(id, sig, action) {
+    try { localStorage.setItem('md_rule_' + id, JSON.stringify({ sig: sig, action: action, t: Date.now(), day: brDatePlus(0) })); } catch(e) {}
+  }
+  function hhmm(t) { return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
 
   function applyRuleSuggestion(i) {
     var camp = cboData[i];
@@ -912,13 +924,26 @@
         pcrTxt = pct(sales, clk); convTxt = pct(sales, ics); iccrTxt = pct(ics, clk);
         fatTxt = fatNum > 0 ? fmtUSD(fatNum) : '---';
         lucroTxt = (fatNum > 0 || sp > 0) ? '<span class="'+(lucroNum>=0?'d-good':'d-bad')+'">'+fmtUSD(lucroNum)+'</span>' : '---';
-        roasTxt = roasNum > 0 ? '<span class="'+(roasNum>=1.4?'d-good':(roasNum>=1.2?'d-warn':'d-bad'))+'">'+roasNum.toFixed(2).replace('.',',')+'</span>' : '---';
+        roasTxt = roasNum > 0 ? '<span class="'+(roasNum>=1.5?'d-good':(roasNum>=1.3?'d-warn':'d-bad'))+'">'+roasNum.toFixed(2).replace('.',',')+'</span>' : '---';
         if (isToday) {
           var rule = suggestRule(camp, dayMoodObj.mood);
           camp._sugEnd = rule.newEnd;
-          sugTxt = '<span class="'+rule.cls+'" style="font-size:11px;font-weight:600">'+rule.action+'</span>'
-                 + (rule.newEnd ? ('<div style="font-size:10px;color:#8b949e;margin-top:2px">termino '+rule.newEnd.split('-').reverse().join('/')+'</div>'
-                      + '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px">Aplicar regra</button>') : '');
+          camp._sugSig = rule.sig;
+          camp._sugAction = rule.action;
+          var applied = getAppliedRule(camp.id);
+          var sameApplied = applied && rule.sig && applied.sig === rule.sig;
+          sugTxt = '<span class="'+rule.cls+'" style="font-size:11px;font-weight:600">'+rule.action+'</span>';
+          if (rule.newEnd && sameApplied) {
+            /* Mesma regra ja aplicada hoje -> mostra a hora, SEM botao. */
+            sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; aplicada as '+hhmm(applied.t)+'</div>';
+          } else if (rule.newEnd) {
+            /* Regra acionavel e diferente da ultima aplicada -> mostra botao. */
+            sugTxt += '<div style="font-size:10px;color:#8b949e;margin-top:2px">termino '+rule.newEnd.split('-').reverse().join('/')+'</div>'
+                    + '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px">Aplicar regra</button>';
+          } else if (applied) {
+            /* Sem acao agora (MANTER/Coletando), mas houve uma regra aplicada antes hoje. */
+            sugTxt += '<div style="font-size:10px;color:#6e7681;margin-top:2px">ult. aplicada: '+(applied.action||'')+' as '+hhmm(applied.t)+'</div>';
+          }
         } else {
           camp._sugEnd = null;
           var sug = suggestBudget(roasNum, sales, sp);
@@ -959,7 +984,7 @@
         '<td style="font-size:12px">'+roasTxt+'</td>' +
         '<td style="font-size:12px;color:#d2a20a;font-weight:600">'+diarioMeta+'</td>' +
         '<td><input class="cbo-inp" id="cdaily_'+i+'" type="number" min="1" step="any" placeholder="ex: 100"></td>' +
-        '<td id="sugcell_'+i+'" style="max-width:150px;white-space:normal;line-height:1.3">'+(camp._applied?'<span class="d-good" style="font-size:11px">&#10003; Regra aplicada</span>':sugTxt)+'</td>' +
+        '<td id="sugcell_'+i+'" style="max-width:150px;white-space:normal;line-height:1.3">'+sugTxt+'</td>' +
         '<td id="cdays_'+i+'" style="font-size:13px">'+initDays+'</td>' +
         '<td id="cend_'+i+'" style="font-size:12px;color:#c9d1d9">'+initEnd+'</td>' +
         '<td><input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'"></td>' +
@@ -1162,10 +1187,11 @@
 
         if (campMatch) {
           if (btn) { btn.textContent = 'Aplicado!'; btn.style.background = '#3fb950'; btn.style.borderColor = '#3fb950'; }
-          /* Marca a campanha como aplicada e some a sugestao + botao de regra. */
-          camp._applied = true;
+          /* Registra a regra aplicada (com hora) e some o botao desta regra. */
+          if (camp._sugSig) setAppliedRule(camp.id, camp._sugSig, camp._sugAction);
           var sc = document.getElementById('sugcell_'+i);
-          if (sc) sc.innerHTML = '<span class="d-good" style="font-size:11px">&#10003; Regra aplicada</span>';
+          if (sc) sc.innerHTML = '<span class="d-good" style="font-size:11px;font-weight:600">'+(camp._sugAction||'Regra')+'</span>'
+                              + '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; aplicada as '+hhmm(Date.now())+'</div>';
           setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 3000);
           return;
         }
@@ -1292,6 +1318,20 @@
     closeModal(); load();
   });
   document.getElementById('settModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+  /* Dentro de iframe (memory-news.site/dash) o navegador pode NAO salvar os tokens
+     (armazenamento de terceiros). Avisa e oferece o link direto (first-party). */
+  (function() {
+    var inIframe = false; try { inIframe = (window.self !== window.top); } catch(e) { inIframe = true; }
+    if (!inIframe) return;
+    var tip = document.createElement('div');
+    tip.style.cssText = 'background:rgba(210,153,34,.12);border:1px solid #d2a20a;border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#e3b341;line-height:1.5';
+    tip.innerHTML = '&#9888; Para que seus <b>tokens fiquem salvos neste dispositivo</b>, abra o painel direto e salve nos favoritos: '
+      + '<a href="https://emsmarkt.github.io/meta-dash/" target="_blank" rel="noopener" style="color:#58a6ff;font-weight:700">emsmarkt.github.io/meta-dash</a>. '
+      + 'Aqui dentro do site embutido o navegador costuma apagar os tokens ao fechar.';
+    var mdb = document.getElementById('mdb');
+    if (mdb) mdb.insertBefore(tip, mdb.firstChild);
+  })();
 
   load();
   if (timer) clearInterval(timer);
