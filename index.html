@@ -162,9 +162,6 @@
       <div class="tk-row"><input class="tk-inp" id="rtICInp" type="number" min="1" max="40" placeholder="No do tipo InitiateCheckout (ex: 2)"></div>
       <p style="margin-bottom:6px;font-size:11px;color:#6e7681">Cambio R$/US$ p/ converter o custo do RedTrack (que vem em reais) em dolar. Ex: 5.1</p>
       <div class="tk-row"><input class="tk-inp" id="fxInp" type="number" step="0.01" min="1" placeholder="Cambio R$/US$ (ex: 5.1)"></div>
-      <h3>&#129302; Robo (Cloudflare Worker)</h3>
-      <p style="margin-bottom:8px">URL do Worker. Quando preenchida, o estado "regra aplicada as XX:XX" fica <b>compartilhado entre todos</b> (nao so neste dispositivo). Ex: https://meta-robo-cbo.SEU-USUARIO.workers.dev</p>
-      <div class="tk-row"><input class="tk-inp" id="wkUrlInp" type="text" placeholder="https://...workers.dev"></div>
       <h3>&#128200; Utmify (fallback)</h3>
       <p style="margin-bottom:8px">Usado apenas se o RedTrack nao estiver configurado.</p>
       <div class="tk-row"><input class="tk-inp" id="utmTkInp" type="password" placeholder="Token API Utmify"></div>
@@ -203,7 +200,7 @@
     cpaTarget: 175,      // teto de CPA = META de ROAS (175 -> ROAS 1.5)
     cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
     minRoas: 1.4,        // ROAS minimo aceitavel: entre 1.4 e a meta -> LIMITA (trava no gasto); abaixo de 1.4 -> corta $100
-    cutNoSaleSpend: 120, // gastou >= isso e 0 venda -> piso
+    cutNoSaleSpend: 110, // gastou >= isso e 0 venda -> piso ($85)
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
     aumRoasLow: 1.5,     // ROAS bom: faixa de aumento proporcional (1.5 a 1.9)
@@ -237,9 +234,10 @@
   function getRtICType() { try { return localStorage.getItem('rt_ictype') || '2'; } catch(e) { return '2'; } }
   function saveRtICType(v) { try { if (v) localStorage.setItem('rt_ictype', v); else localStorage.removeItem('rt_ictype'); } catch(e) {} }
   function hasConv() { return !!(getRtTk() || getUtmTk()); }
-  /* URL do Worker (Cloudflare) — usada p/ compartilhar o estado "regra aplicada" entre todos. */
-  function getWkUrl() { try { return (localStorage.getItem('wk_url') || '').replace(/\/+$/,''); } catch(e) { return ''; } }
-  function saveWkUrl(v) { try { v = (v||'').trim().replace(/\/+$/,''); if (v) localStorage.setItem('wk_url', v); else localStorage.removeItem('wk_url'); } catch(e) {} }
+  /* URL do Worker (Cloudflare) FIXA no codigo — igual p/ todos que acessam (nao pede a cada um).
+     Se mudar o worker, troque so esta linha. (localStorage 'wk_url' ainda sobrescreve, se existir.) */
+  var WK_URL_DEFAULT = 'https://meta-robo-cbo.emersondomarketing.workers.dev';
+  function getWkUrl() { try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
   /* Cambio R$->US$ p/ converter o custo do RedTrack (que vem em reais). */
   function getFx() { try { var v = parseFloat(localStorage.getItem('md_fx')); return (v && v > 0) ? v : 5.1; } catch(e) { return 5.1; } }
   function saveFx(v) { try { v = parseFloat(v); if (v && v > 0) localStorage.setItem('md_fx', String(v)); } catch(e) {} }
@@ -379,6 +377,14 @@
     if (hasS) return 'noeng';
     return 'none';
   }
+  /* Estado das CBO da conta: 'active' (tem CBO ativa), 'paused' (tem CBO mas TODAS pausadas), 'none'. */
+  function cboState(camps) {
+    if (!camps || !camps.length) return 'none';
+    var cbo = camps.filter(function(c){ return c.name && c.name.toUpperCase().indexOf('CBO') >= 0; });
+    if (!cbo.length) return 'none';
+    if (cbo.some(function(c){ return (c.status||'').toUpperCase() === 'ACTIVE'; })) return 'active';
+    return 'paused';
+  }
 
   function showSetup() {
     document.getElementById('mainContent').innerHTML = '<div class="setup-box"><h2>&#128274; Configure seu acesso</h2><p>Cole seu token do Meta Ads abaixo. Ele sera salvo apenas no seu navegador e nunca ficara visivel no codigo da pagina.</p><input class="setup-inp" id="setupTk" type="password" placeholder="EAAUkGiht2h..."><br><button class="btn btn-blue" id="btnSetupSave" style="width:100%;justify-content:center;margin-top:8px">Conectar e carregar contas</button><p style="margin-top:12px;font-size:11px;color:#6e7681">Voce pode adicionar mais tokens depois pelo botao &#9881; Tokens no topo.</p></div>';
@@ -390,7 +396,7 @@
   }
 
   function renderShell() {
-    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#3fb950" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#f85149" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#d2a20a" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto mes atual</div><div class="mc-v" id="mSpend">---</div><div class="mc-s">this_month</div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span style="width:1px;height:20px;background:#30363d;margin:0 4px"></span><span style="font-size:12px;color:#6e7681;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
+    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#3fb950" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#f85149" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#d2a20a" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto mes atual</div><div class="mc-v" id="mSpend">---</div><div class="mc-s">this_month</div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span class="pill" data-f="cbopaused">&#9888; CBO parada <b id="cCboP"></b></span><span style="width:1px;height:20px;background:#30363d;margin:0 4px"></span><span style="font-size:12px;color:#6e7681;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
     document.getElementById('mainContent').addEventListener('click', function(e) {
       var pill = e.target.closest ? e.target.closest('.pill') : null;
       if (!pill) return;
@@ -452,6 +458,7 @@
             var fs = (dlRes && dlRes.funding_source_details) || acc.funding_source_details;
             acc._card = (fs && fs.display_string) ? fs.display_string : null;
             acc._cat = classify(acc._camps);
+            acc._cboState = cboState(acc._camps);
           }).catch(function() { acc._camps = []; acc._sToday = 0; acc._sYest = 0; acc._s7d = 0; acc._sMon = 0; acc._sLmon = 0; acc._dl = null; });
         })).then(nextBatch);
       }
@@ -481,21 +488,22 @@
     document.getElementById('mSemCard').textContent = acc.filter(function(a){return !a._card;}).length;
     var tot = acc.reduce(function(s,a){return s+parseFloat(a._sMon||0);},0);
     document.getElementById('mSpend').textContent = tot > 0 ? fmtUSD(tot) : '---';
-    var ct = {none:0,engonly:0,both:0,noeng:0,warn:0};
-    acc.forEach(function(a){ ct[a._cat]=(ct[a._cat]||0)+1; if(a.account_status===3)ct.warn++; });
+    var ct = {none:0,engonly:0,both:0,noeng:0,warn:0,cbopaused:0};
+    acc.forEach(function(a){ ct[a._cat]=(ct[a._cat]||0)+1; if(a.account_status===3)ct.warn++; if(a._cboState==='paused')ct.cbopaused++; });
     document.getElementById('cAll').textContent = '('+acc.length+')';
     document.getElementById('cNone').textContent = ct.none?'('+ct.none+')':'';
     document.getElementById('cEngO').textContent = ct.engonly?'('+ct.engonly+')':'';
     document.getElementById('cBoth').textContent = ct.both?'('+ct.both+')':'';
     document.getElementById('cNoE').textContent = ct.noeng?'('+ct.noeng+')':'';
     document.getElementById('cWarn').textContent = ct.warn?'('+ct.warn+'!)':'';
+    var cp = document.getElementById('cCboP'); if (cp) cp.textContent = ct.cbopaused?'('+ct.cbopaused+')':'';
   }
 
   function renderTable() {
     var srch = document.getElementById('srch');
     var q = srch ? srch.value.toLowerCase() : '';
     var rows = allData.filter(function(a) {
-      var mf = curF==='all' || (curF==='warn' && a.account_status===3) || a._cat===curF;
+      var mf = curF==='all' || (curF==='warn' && a.account_status===3) || (curF==='cbopaused' && a._cboState==='paused') || a._cat===curF;
       var mAcct = curAcctF==='all' || (curAcctF==='active' && a.account_status===1) || (curAcctF==='disabled' && a.account_status!==1);
       var mq = !q || a.name.toLowerCase().indexOf(q) >= 0;
       return mf && mAcct && mq;
@@ -511,7 +519,7 @@
       return '<tr style="'+rowBg+'">'+
         '<td style="font-weight:500;color:#f0f6fc;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="'+name+'">'+name+'</td>'+
         '<td>'+statusBadge(acc.account_status)+'</td>'+
-        '<td>'+campBadge(acc._cat)+'</td>'+
+        '<td>'+campBadge(acc._cat)+(acc._cboState==='paused'?'<div style="font-size:10px;color:#d2a20a;margin-top:3px;font-weight:600" title="A conta tem CBO mas todas estao pausadas — livre p/ subir novas">&#9888; CBO parada (livre p/ subir)</div>':(acc._cboState==='active'?'<div style="font-size:10px;color:#3fb950;margin-top:3px">CBO ativa</div>':''))+'</td>'+
         '<td style="font-size:12px">'+(acc._card?('<span style="color:#8b949e">'+acc._card.replace(/</g,'&lt;')+'</span>'):'<span class="badge b-r">sem cartao</span>')+'</td>'+
         '<td style="font-size:12px;color:#58a6ff">'+dl+'</td>'+
         '<td style="font-size:12px">'+(acc._sToday>0?fmtUSD(acc._sToday):'---')+'</td>'+
@@ -895,8 +903,9 @@
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
     if (newEnd && newEnd <= brDatePlus(0)) newEnd = brDatePlus(1); /* nunca termina hoje */
-    /* Assinatura estavel da regra (tipo + valor alvo) p/ saber se ja foi aplicada. */
-    var sig = target ? (key + ':' + Math.round(target)) : null;
+    /* Assinatura da regra = TIPO (key). Nao inclui o valor, pra nao reaparecer o botao quando
+       o alvo varia (ex: ESCALAR/AUMENTAR). Mesmo tipo aplicado hoje = nao mostra de novo. */
+    var sig = target ? key : null;
     return { action: action, cls: cls, target: target, newEnd: newEnd, key: key, sig: sig };
   }
   /* Registro (por dispositivo) da ultima regra aplicada em cada campanha, com hora. Reseta a cada dia. */
@@ -1315,7 +1324,6 @@
     if (rtInp) rtInp.value = getRtTk();
     var rtP = document.getElementById('rtPInp'); if (rtP) rtP.value = getRtPType();
     var rtIC = document.getElementById('rtICInp'); if (rtIC) rtIC.value = getRtICType();
-    var wk = document.getElementById('wkUrlInp'); if (wk) wk.value = getWkUrl();
     var fxi = document.getElementById('fxInp'); if (fxi) fxi.value = getFx();
   }
 
@@ -1401,7 +1409,6 @@
     if (rtInp) saveRtTk(rtInp.value.trim());
     var rtP = document.getElementById('rtPInp'); if (rtP) saveRtPType(rtP.value.trim());
     var rtIC = document.getElementById('rtICInp'); if (rtIC) saveRtICType(rtIC.value.trim());
-    var wk = document.getElementById('wkUrlInp'); if (wk) saveWkUrl(wk.value);
     var fxi = document.getElementById('fxInp'); if (fxi) saveFx(fxi.value);
     closeModal(); load();
   });
