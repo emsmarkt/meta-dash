@@ -141,6 +141,8 @@
       <p style="margin-bottom:6px;font-size:11px;color:#6e7681">No RedTrack, em Conversion Types, cada tipo tem um numero. Informe o numero do tipo de VENDA (Purchase) e do InitiateCheckout. Deixe vazio para somar todas as conversoes.</p>
       <div class="tk-row"><input class="tk-inp" id="rtPInp" type="number" min="1" max="40" placeholder="No do tipo Purchase (ex: 1)"></div>
       <div class="tk-row"><input class="tk-inp" id="rtICInp" type="number" min="1" max="40" placeholder="No do tipo InitiateCheckout (ex: 2)"></div>
+      <p style="margin-bottom:6px;font-size:11px;color:#6e7681">Cambio R$/US$ p/ converter o custo do RedTrack (que vem em reais) em dolar. Ex: 5.1</p>
+      <div class="tk-row"><input class="tk-inp" id="fxInp" type="number" step="0.01" min="1" placeholder="Cambio R$/US$ (ex: 5.1)"></div>
       <h3>&#129302; Robo (Cloudflare Worker)</h3>
       <p style="margin-bottom:8px">URL do Worker. Quando preenchida, o estado "regra aplicada as XX:XX" fica <b>compartilhado entre todos</b> (nao so neste dispositivo). Ex: https://meta-robo-cbo.SEU-USUARIO.workers.dev</p>
       <div class="tk-row"><input class="tk-inp" id="wkUrlInp" type="text" placeholder="https://...workers.dev"></div>
@@ -183,8 +185,12 @@
     cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
     minRoas: 1.4,        // ROAS minimo aceitavel: entre 1.4 e a meta -> LIMITA (trava no gasto); abaixo de 1.4 -> corta $100
     cutNoSaleSpend: 120, // gastou >= isso e 0 venda -> piso
-    excRoas: 2.0,        // excepcional: ROAS >= isso ...
-    excMinSales: 3,      // ... com pelo menos N vendas -> escalar forte (x5)
+    excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
+    excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
+    aumRoasLow: 1.5,     // ROAS bom: faixa de aumento proporcional (1.5 a 1.9)
+    aumRoasHigh: 1.9,
+    aumPctLow: 0.30,     // +30% no ROAS 1.5 ...
+    aumPctHigh: 0.70,    // ... ate +70% no ROAS 1.9. Diario = vendas x cpaTarget x (1+%)
     scaleMult: 5,        // multiplicador de escala (baseado SO no dia de hoje; sem historico)
     scaleUsePct: 0.2,    // SO escala/libera se gasto de hoje >= isso do diario atual
     releaseDaily: 500,   // campanha que vendeu mas esta com diario baixo -> libera p/ esse valor (acompanhar)
@@ -215,6 +221,9 @@
   /* URL do Worker (Cloudflare) — usada p/ compartilhar o estado "regra aplicada" entre todos. */
   function getWkUrl() { try { return (localStorage.getItem('wk_url') || '').replace(/\/+$/,''); } catch(e) { return ''; } }
   function saveWkUrl(v) { try { v = (v||'').trim().replace(/\/+$/,''); if (v) localStorage.setItem('wk_url', v); else localStorage.removeItem('wk_url'); } catch(e) {} }
+  /* Cambio R$->US$ p/ converter o custo do RedTrack (que vem em reais). */
+  function getFx() { try { var v = parseFloat(localStorage.getItem('md_fx')); return (v && v > 0) ? v : 5.1; } catch(e) { return 5.1; } }
+  function saveFx(v) { try { v = parseFloat(v); if (v && v > 0) localStorage.setItem('md_fx', String(v)); } catch(e) {} }
   var appliedShared = {}; /* mapa {campId:{sig,action,t,day}} vindo do Worker (compartilhado) */
   function fetchAppliedShared() {
     var u = getWkUrl();
@@ -539,7 +548,8 @@
           var sales = parseInt(row['convtype'+pType]) || 0;
           var ic = parseInt(row['convtype'+icType]) || 0;
           var rev = parseFloat(row['revenuetype'+pType]) || parseFloat(row.total_revenue) || 0;
-          var conv = { sales: sales, ic: ic, revenue: rev };
+          var cost = pickNum(row, ['cost','total_cost','spend','ad_cost']); /* custo do RedTrack em R$ */
+          var conv = { sales: sales, ic: ic, revenue: rev, cost: cost };
           ['sub3','campaign_id','source_campaign_id','rt_campaign_id','fb_campaign_id','id'].forEach(function(k){
             if (row[k] != null && row[k] !== '') byId[String(row[k])] = conv;
           });
@@ -694,6 +704,14 @@
     function nextBatch() {
       if (idx >= camps.length) {
         return fetchConversions(camps).then(function() {
+          /* GASTO pelo RedTrack (mesma fonte e fuso das vendas). O custo do RedTrack vem em R$;
+             converte p/ US$ pelo cambio. Se a campanha nao casou no RedTrack, mantem o gasto do Meta. */
+          var fx = getFx();
+          camps.forEach(function(c) {
+            c._metaSpend = c._periodSpend; /* guarda o do Meta p/ referencia */
+            if (c._conv && c._conv.cost > 0) { c._periodSpend = c._conv.cost / fx; c._spendSrc = 'rt'; }
+            else { c._spendSrc = 'meta'; }
+          });
           /* Aviso de prejuizo 3d so na carga inicial; estado compartilhado de regras aplicadas sempre. */
           var need3d = camps.some(function(c){ return c._alert3d === undefined; });
           return Promise.all([
@@ -856,17 +874,22 @@
       /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
       var cur = currentDailyOf(camp);
       if (roas >= RULES.excRoas && sales >= RULES.excMinSales && cur > 0 && sp >= RULES.scaleUsePct * cur) {
-        /* Excepcional (ROAS >= 2) E usando o orcamento -> escala x5. */
+        /* EXCELENTE (ROAS >= 2) E usando o orcamento -> escala x5. */
         target = cur * RULES.scaleMult;
-        action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS ' + roasFmt + ', ' + sales + ' vendas)'; cls = 'd-good'; key = 'ESCALAR';
-      } else if (cur > 0 && cur < sp) {
-        /* Vende mas o diario esta ABAIXO do que ela gastou hoje (estrangulada) -> libera.
-           NUNCA abaixo do gasto de hoje (senao seria reducao): max(releaseDaily, gasto). */
-        target = Math.max(RULES.releaseDaily, sp);
-        action = 'AUMENTAR p/ $' + Math.round(target) + '/dia (libera — vende e estava limitada)'; cls = 'd-good'; key = 'AUMENTAR';
+        action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS excelente ' + roasFmt + ')'; cls = 'd-good'; key = 'ESCALAR';
       } else {
-        target = null; /* nao mexe: ou nao e excepcional, ou ja tem orcamento de sobra */
-        action = 'MANTER (ROAS ' + roasFmt + ' >= meta ' + metaRoasTxt + ')'; cls = 'd-good'; key = 'MANTER';
+        /* ROAS BOM (1.5 a 1.9): aumento proporcional. % de 30% (1.5) a 70% (1.9).
+           Diario = vendas x CPA-limite x (1 + %). So aumenta se for acima do ritmo atual. */
+        var pct = Math.max(RULES.aumPctLow, Math.min(RULES.aumPctHigh,
+          RULES.aumPctLow + (roas - RULES.aumRoasLow) / (RULES.aumRoasHigh - RULES.aumRoasLow) * (RULES.aumPctHigh - RULES.aumPctLow)));
+        var formula = Math.max(RULES.floorDaily, sales * RULES.cpaTarget * (1 + pct));
+        if (formula > cur) {
+          target = formula;
+          action = 'AUMENTAR p/ $' + Math.round(target) + ' (+' + Math.round(pct * 100) + '%, ROAS ' + roasFmt + ')'; cls = 'd-good'; key = 'AUMENTAR';
+        } else {
+          target = null; /* ja tem orcamento >= proporcional -> nao precisa mexer */
+          action = 'MANTER (ROAS ' + roasFmt + ', ja com orcamento)'; cls = 'd-good'; key = 'MANTER';
+        }
       }
     } else if (roas >= RULES.minRoas) {
       /* VENDEU, ROAS abaixo da meta mas ACIMA do minimo (>=1,4): NAO volta p/ $100.
@@ -1264,6 +1287,7 @@
     var rtP = document.getElementById('rtPInp'); if (rtP) rtP.value = getRtPType();
     var rtIC = document.getElementById('rtICInp'); if (rtIC) rtIC.value = getRtICType();
     var wk = document.getElementById('wkUrlInp'); if (wk) wk.value = getWkUrl();
+    var fxi = document.getElementById('fxInp'); if (fxi) fxi.value = getFx();
   }
 
   /* CBO search filter */
@@ -1349,6 +1373,7 @@
     var rtP = document.getElementById('rtPInp'); if (rtP) saveRtPType(rtP.value.trim());
     var rtIC = document.getElementById('rtICInp'); if (rtIC) saveRtICType(rtIC.value.trim());
     var wk = document.getElementById('wkUrlInp'); if (wk) saveWkUrl(wk.value);
+    var fxi = document.getElementById('fxInp'); if (fxi) saveFx(fxi.value);
     closeModal(); load();
   });
   document.getElementById('settModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
