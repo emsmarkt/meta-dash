@@ -193,7 +193,7 @@
     dayGood: 1.6,        // humor do dia: ROAS combinado >= isso = dia BOM
     dayOk: 1.2,          // entre dayOk e dayGood = NORMAL; abaixo = RUIM
     minSpendJudge: 100,  // so julga campanha apos esse gasto no dia (US$)
-    floorDaily: 100,     // piso de orcamento diario (US$)
+    floorDaily: 85,      // piso de orcamento diario (US$) — valor do CORTAR
     cpaTarget: 175,      // teto de CPA = META de ROAS (175 -> ROAS 1.5)
     cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
     minRoas: 1.4,        // ROAS minimo aceitavel: entre 1.4 e a meta -> LIMITA (trava no gasto); abaixo de 1.4 -> corta $100
@@ -848,10 +848,12 @@
     } else if (cpa <= ceiling) {
       /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
       var cur = currentDailyOf(camp);
-      if (roas >= RULES.excRoas && sales >= RULES.excMinSales && cur > 0 && sp >= RULES.scaleUsePct * cur) {
-        /* EXCELENTE (ROAS >= 2) E usando o orcamento -> escala x5. */
-        target = cur * RULES.scaleMult;
-        action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS excelente ' + roasFmt + ')'; cls = 'd-good'; key = 'ESCALAR';
+      var baseDaily = cur > 0 ? cur : (rem > 0 ? Math.max(RULES.floorDaily, rem / 30) : RULES.floorDaily);
+      var excellent = (roas >= RULES.excRoas) || (sp < 1 && sales > 0); /* ROAS>=2 OU vende sem gasto hoje */
+      if (excellent) {
+        /* EXCELENTE -> escala x5 (ROAS otimo manda, independente de qtd de vendas/uso do orcamento). */
+        target = baseDaily * RULES.scaleMult;
+        action = 'ESCALAR x' + RULES.scaleMult + (sp < 1 && sales > 0 ? ' (vende sem gasto hoje)' : ' (ROAS excelente ' + roasFmt + ')'); cls = 'd-good'; key = 'ESCALAR';
       } else {
         /* ROAS BOM (1.5 a 1.9): aumento proporcional. % de 30% (1.5) a 70% (1.9).
            Diario = vendas x CPA-limite x (1 + %). So aumenta se for acima do ritmo atual. */
@@ -876,8 +878,17 @@
       target = RULES.floorDaily;
       action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
     }
+    /* NUNCA deixar encerrar hoje: se passou das 23h BR e a campanha termina hoje e a regra
+       nao mexe na data (MANTER/Coletando), forca estender p/ amanha. */
+    var dleft = daysLeftOf(camp);
+    var lateBR = (new Date(Date.now() - 3 * 3600 * 1000).getUTCHours()) >= 23;
+    if (lateBR && dleft <= 1 && !target) {
+      target = Math.max(RULES.floorDaily, rem > 0 ? rem / 30 : RULES.floorDaily);
+      action = 'ESTENDER — nao encerrar hoje (passou das 23h)'; cls = 'd-warn'; key = 'ESTENDER';
+    }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
+    if (newEnd && newEnd <= brDatePlus(0)) newEnd = brDatePlus(1); /* nunca termina hoje */
     /* Assinatura estavel da regra (tipo + valor alvo) p/ saber se ja foi aplicada. */
     var sig = target ? (key + ':' + Math.round(target)) : null;
     return { action: action, cls: cls, target: target, newEnd: newEnd, key: key, sig: sig };
@@ -1163,6 +1174,8 @@
     var dateInp = document.getElementById('cnewdate_'+i);
     var dateVal = dateInp ? dateInp.value : '';
     if (!dateVal) { alert('Selecione uma data antes de aplicar.'); return; }
+    /* NUNCA terminar hoje: se a data escolhida for hoje (ou passado), joga p/ amanha. */
+    if (dateVal <= brDatePlus(0)) { dateVal = brDatePlus(1); if (dateInp) dateInp.value = dateVal; }
     var btn = document.getElementById('csavebtn_'+i);
     if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
     /* Usa fim de dia no fuso BR (UTC-3). O stop_time/end_time do Meta aceita ISO 8601. */
