@@ -176,8 +176,9 @@
     dayOk: 1.2,          // entre dayOk e dayGood = NORMAL; abaixo = RUIM
     minSpendJudge: 100,  // so julga campanha apos esse gasto no dia (US$)
     floorDaily: 100,     // piso de orcamento diario (US$)
-    cpaTarget: 175,      // teto de CPA dia normal/bom (ROAS 1.5)
+    cpaTarget: 175,      // teto de CPA = META de ROAS (175 -> ROAS 1.5)
     cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
+    minRoas: 1.4,        // ROAS minimo aceitavel: entre 1.4 e a meta -> LIMITA (trava no gasto); abaixo de 1.4 -> corta $100
     cutNoSaleSpend: 120, // gastou >= isso e 0 venda -> piso
     excCpa: 100,         // excepcional: CPA < isso (US$) ...
     excMinSales: 3,      // ... com pelo menos N vendas -> escalar forte (x5)
@@ -830,6 +831,7 @@
     var target = null, action = '', cls = 'd-warn', key = '';
     var roasFmt = roas.toFixed(2).replace('.', ',');                       /* ROAS de hoje */
     var metaRoasTxt = (260 / RULES.cpaTarget).toFixed(1).replace('.', ','); /* meta de ROAS (ex: 1,5) */
+    var minRoasTxt = RULES.minRoas.toFixed(1).replace('.', ',');           /* ROAS minimo (ex: 1,4) */
 
     if (sales === 0) {
       /* SEM VENDA: gastou o suficiente -> corta p/ piso; senao "Coletando". */
@@ -851,10 +853,15 @@
         target = null; /* nao mexe: ou nao e excepcional, ou ja tem orcamento de sobra */
         action = 'MANTER (ROAS ' + roasFmt + ' >= meta ' + metaRoasTxt + ')'; cls = 'd-good'; key = 'MANTER';
       }
+    } else if (roas >= RULES.minRoas) {
+      /* VENDEU, ROAS abaixo da meta mas ACIMA do minimo (>=1,4): NAO volta p/ $100.
+         Congela o diario no GASTO de hoje (ex: gastou $1k -> $1k; 3 vendas ROAS 1,4 -> ~$525). */
+      target = Math.max(sp, RULES.floorDaily);
+      action = 'LIMITAR no gasto (~$' + Math.round(target) + ', ROAS ' + roasFmt + ' >= ' + minRoasTxt + ')'; cls = 'd-warn'; key = 'LIMITAR';
     } else {
-      /* CPA acima do teto. */
-      if (mood === 'bad') { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS ' + roasFmt + ' < meta ' + metaRoasTxt + ', dia ruim)'; cls = 'd-bad'; key = 'CORTAR'; }
-      else { target = Math.max(RULES.floorDaily, RULES.cpaTarget * sales); action = 'LIMITAR (ROAS ' + roasFmt + ' < meta ' + metaRoasTxt + ') -> diario ~$' + Math.round(target); cls = 'd-bad'; key = 'LIMITAR'; }
+      /* ROAS abaixo do minimo (' + minRoasTxt + ') = prejuizo real -> corta p/ piso $100. */
+      target = RULES.floorDaily;
+      action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
     }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
