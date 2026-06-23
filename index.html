@@ -1247,6 +1247,11 @@
         if (campErr) head += '\nMOTIVO (Meta): ' + campErr + '\n';
         else head += '\nO Meta aceitou a chamada mas nao alterou o stop_time da campanha (campanha vitalicia costuma travar a data quando esta perto do fim).\n';
         if (setsMatch) head += '\nObs: os CONJUNTOS ficaram com ' + wantDay.split('-').reverse().join('/') + ', mas em CBO o ritmo segue o stop_time da CAMPANHA — por isso o diario nao muda.\n';
+        /* Detecta token/app invalido e da instrucao clara. */
+        var allTxt = (campErr || '') + ' ' + report.join(' ');
+        if (/application has been deleted|validating application|access token|session.*expired|OAuth|code 190/i.test(allTxt)) {
+          head += '\n>>> TOKEN INVALIDO: o app do Facebook desse token foi DELETADO (ou o token expirou). Gere um TOKEN NOVO (de um app valido) com acesso a esse Business Manager e troque em ⚙ Tokens. Sem isso, o conjunto dessa conta nao pode ser alterado.\n';
+        }
         alert(head + '\n--- detalhes ---\n' + report.join('\n'));
       })
       .catch(function(e) {
