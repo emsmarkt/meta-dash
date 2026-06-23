@@ -141,6 +141,9 @@
       <p style="margin-bottom:6px;font-size:11px;color:#6e7681">No RedTrack, em Conversion Types, cada tipo tem um numero. Informe o numero do tipo de VENDA (Purchase) e do InitiateCheckout. Deixe vazio para somar todas as conversoes.</p>
       <div class="tk-row"><input class="tk-inp" id="rtPInp" type="number" min="1" max="40" placeholder="No do tipo Purchase (ex: 1)"></div>
       <div class="tk-row"><input class="tk-inp" id="rtICInp" type="number" min="1" max="40" placeholder="No do tipo InitiateCheckout (ex: 2)"></div>
+      <h3>&#129302; Robo (Cloudflare Worker)</h3>
+      <p style="margin-bottom:8px">URL do Worker. Quando preenchida, o estado "regra aplicada as XX:XX" fica <b>compartilhado entre todos</b> (nao so neste dispositivo). Ex: https://meta-robo-cbo.SEU-USUARIO.workers.dev</p>
+      <div class="tk-row"><input class="tk-inp" id="wkUrlInp" type="text" placeholder="https://...workers.dev"></div>
       <h3>&#128200; Utmify (fallback)</h3>
       <p style="margin-bottom:8px">Usado apenas se o RedTrack nao estiver configurado.</p>
       <div class="tk-row"><input class="tk-inp" id="utmTkInp" type="password" placeholder="Token API Utmify"></div>
@@ -180,7 +183,7 @@
     cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
     minRoas: 1.4,        // ROAS minimo aceitavel: entre 1.4 e a meta -> LIMITA (trava no gasto); abaixo de 1.4 -> corta $100
     cutNoSaleSpend: 120, // gastou >= isso e 0 venda -> piso
-    excCpa: 100,         // excepcional: CPA < isso (US$) ...
+    excRoas: 2.0,        // excepcional: ROAS >= isso ...
     excMinSales: 3,      // ... com pelo menos N vendas -> escalar forte (x5)
     scaleMult: 5,        // multiplicador de escala (baseado SO no dia de hoje; sem historico)
     scaleUsePct: 0.2,    // SO escala/libera se gasto de hoje >= isso do diario atual
@@ -209,6 +212,15 @@
   function getRtICType() { try { return localStorage.getItem('rt_ictype') || '2'; } catch(e) { return '2'; } }
   function saveRtICType(v) { try { if (v) localStorage.setItem('rt_ictype', v); else localStorage.removeItem('rt_ictype'); } catch(e) {} }
   function hasConv() { return !!(getRtTk() || getUtmTk()); }
+  /* URL do Worker (Cloudflare) — usada p/ compartilhar o estado "regra aplicada" entre todos. */
+  function getWkUrl() { try { return (localStorage.getItem('wk_url') || '').replace(/\/+$/,''); } catch(e) { return ''; } }
+  function saveWkUrl(v) { try { v = (v||'').trim().replace(/\/+$/,''); if (v) localStorage.setItem('wk_url', v); else localStorage.removeItem('wk_url'); } catch(e) {} }
+  var appliedShared = {}; /* mapa {campId:{sig,action,t,day}} vindo do Worker (compartilhado) */
+  function fetchAppliedShared() {
+    var u = getWkUrl();
+    if (!u) { appliedShared = {}; return Promise.resolve(); }
+    return fetch(u + '/applied').then(function(r){ return r.json(); }).then(function(m){ appliedShared = (m && typeof m === 'object') ? m : {}; }).catch(function(){ appliedShared = {}; });
+  }
   function setSpin(on) { var el = document.getElementById('spinIco'); if (el) el.style.display = on ? 'inline-block' : 'none'; }
   function fj(url) { return fetch(url).then(function(r) { return r.json(); }); }
   /* Segue paginacao do Graph API (data.paging.next) e devolve TODOS os itens. */
@@ -682,9 +694,12 @@
     function nextBatch() {
       if (idx >= camps.length) {
         return fetchConversions(camps).then(function() {
-          /* Aviso de prejuizo 3d so na carga inicial (nao a cada troca de periodo). */
+          /* Aviso de prejuizo 3d so na carga inicial; estado compartilhado de regras aplicadas sempre. */
           var need3d = camps.some(function(c){ return c._alert3d === undefined; });
-          return (need3d ? fetchAlert3d(camps) : Promise.resolve()).then(function(){
+          return Promise.all([
+            (need3d ? fetchAlert3d(camps) : Promise.resolve()),
+            fetchAppliedShared()
+          ]).then(function(){
             cboData = camps; renderCBO();
             var sp = document.getElementById('spinCBO'); if (sp) sp.style.display='none';
           });
@@ -840,15 +855,15 @@
     } else if (cpa <= ceiling) {
       /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
       var cur = currentDailyOf(camp);
-      if (cpa < RULES.excCpa && sales >= RULES.excMinSales && cur > 0 && sp >= RULES.scaleUsePct * cur) {
-        /* Excepcional E usando o orcamento -> escala x5. */
+      if (roas >= RULES.excRoas && sales >= RULES.excMinSales && cur > 0 && sp >= RULES.scaleUsePct * cur) {
+        /* Excepcional (ROAS >= 2) E usando o orcamento -> escala x5. */
         target = cur * RULES.scaleMult;
         action = 'ESCALAR x' + RULES.scaleMult + ' (ROAS ' + roasFmt + ', ' + sales + ' vendas)'; cls = 'd-good'; key = 'ESCALAR';
       } else if (cur > 0 && cur < sp) {
-        /* Vende mas o diario esta ABAIXO do que ela gastou hoje (estrangulada, ex: baixada pelo rebote)
-           -> libera p/ releaseDaily e acompanhar. */
-        target = RULES.releaseDaily;
-        action = 'AUMENTAR p/ $' + RULES.releaseDaily + '/dia (acompanhar — vende e esta limitada)'; cls = 'd-good'; key = 'AUMENTAR';
+        /* Vende mas o diario esta ABAIXO do que ela gastou hoje (estrangulada) -> libera.
+           NUNCA abaixo do gasto de hoje (senao seria reducao): max(releaseDaily, gasto). */
+        target = Math.max(RULES.releaseDaily, sp);
+        action = 'AUMENTAR p/ $' + Math.round(target) + '/dia (libera — vende e estava limitada)'; cls = 'd-good'; key = 'AUMENTAR';
       } else {
         target = null; /* nao mexe: ou nao e excepcional, ou ja tem orcamento de sobra */
         action = 'MANTER (ROAS ' + roasFmt + ' >= meta ' + metaRoasTxt + ')'; cls = 'd-good'; key = 'MANTER';
@@ -871,10 +886,20 @@
   }
   /* Registro (por dispositivo) da ultima regra aplicada em cada campanha, com hora. Reseta a cada dia. */
   function getAppliedRule(id) {
-    try { var s = localStorage.getItem('md_rule_' + id); if (!s) return null; var o = JSON.parse(s); return (o && o.day === brDatePlus(0)) ? o : null; } catch(e) { return null; }
+    /* Prioridade: estado COMPARTILHADO do Worker; se nao tiver, cai pro localStorage. */
+    var today = brDatePlus(0);
+    var sh = appliedShared && appliedShared[id];
+    if (sh && sh.day === today) return sh;
+    try { var s = localStorage.getItem('md_rule_' + id); if (s) { var o = JSON.parse(s); if (o && o.day === today) return o; } } catch(e) {}
+    return null;
   }
   function setAppliedRule(id, sig, action) {
-    try { localStorage.setItem('md_rule_' + id, JSON.stringify({ sig: sig, action: action, t: Date.now(), day: brDatePlus(0) })); } catch(e) {}
+    var rec = { sig: sig, action: action, t: Date.now(), day: brDatePlus(0) };
+    if (appliedShared) appliedShared[id] = rec;
+    try { localStorage.setItem('md_rule_' + id, JSON.stringify(rec)); } catch(e) {}
+    /* Grava no Worker p/ todos verem (se a URL estiver configurada). */
+    var u = getWkUrl();
+    if (u) { try { fetch(u + '/applied', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: id, sig: sig, action: action }) }).catch(function(){}); } catch(e) {} }
   }
   function hhmm(t) { return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
 
@@ -1238,6 +1263,7 @@
     if (rtInp) rtInp.value = getRtTk();
     var rtP = document.getElementById('rtPInp'); if (rtP) rtP.value = getRtPType();
     var rtIC = document.getElementById('rtICInp'); if (rtIC) rtIC.value = getRtICType();
+    var wk = document.getElementById('wkUrlInp'); if (wk) wk.value = getWkUrl();
   }
 
   /* CBO search filter */
@@ -1322,6 +1348,7 @@
     if (rtInp) saveRtTk(rtInp.value.trim());
     var rtP = document.getElementById('rtPInp'); if (rtP) saveRtPType(rtP.value.trim());
     var rtIC = document.getElementById('rtICInp'); if (rtIC) saveRtICType(rtIC.value.trim());
+    var wk = document.getElementById('wkUrlInp'); if (wk) saveWkUrl(wk.value);
     closeModal(); load();
   });
   document.getElementById('settModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
