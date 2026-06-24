@@ -573,6 +573,7 @@
         var byId = {}, byName = {};
         rows.forEach(function(row) {
           var sales = parseInt(row['convtype'+pType]) || 0;
+          if (!sales) sales = parseInt(row.approved) || 0; /* algumas contas usam 'approved' p/ vendas */
           var ic = parseInt(row['convtype'+icType]) || 0;
           var rev = parseFloat(row['revenuetype'+pType]) || parseFloat(row.total_revenue) || 0;
           var cost = pickNum(row, ['cost','total_cost','spend','ad_cost']); /* custo do RedTrack em R$ */
@@ -930,6 +931,12 @@
   function applyRuleSuggestion(i) {
     var camp = cboData[i];
     if (!camp || !camp._sugEnd) { alert('Sem sugestao aplicavel para esta campanha.'); return; }
+    /* Marca como aplicada JA (otimista): assim a MESMA regra nao reaparece com botao,
+       mesmo que a verificacao da data em CBO vitalicia nao bata exata. */
+    if (camp._sugSig) setAppliedRule(camp.id, camp._sugSig, camp._sugAction);
+    var sc = document.getElementById('sugcell_'+i);
+    if (sc) sc.innerHTML = '<span class="d-good" style="font-size:11px;font-weight:600">'+(camp._sugAction||'Regra')+'</span>'
+                        + '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; aplicada as '+hhmm(Date.now())+'</div>';
     var di = document.getElementById('cnewdate_'+i);
     if (di) di.value = camp._sugEnd;
     saveCBODate(i);
