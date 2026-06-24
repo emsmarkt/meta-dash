@@ -208,7 +208,7 @@
     aumRoasHigh: 1.9,
     aumPctLow: 0.30,     // +30% no ROAS 1.5 ...
     aumPctHigh: 0.70,    // ... ate +70% no ROAS 1.9. Diario = vendas x cpaTarget x (1+%)
-    scaleMult: 5,        // multiplicador de escala (baseado SO no dia de hoje; sem historico)
+    scaleMult: 12,       // multiplicador de escala (agressivo: 12x o GASTO de hoje). Range util 10-15
     scaleUsePct: 0.2,    // SO escala/libera se gasto de hoje >= isso do diario atual
     releaseDaily: 500,   // campanha que vendeu mas esta com diario baixo -> libera p/ esse valor (acompanhar)
     alert3dRoas: 1.0,    // AVISO (nao mexe em orcamento): ROAS dos ult. 3 dias < isso = prejuizo
@@ -873,24 +873,24 @@
       else { action = 'Coletando (sem venda)'; key = 'COLETANDO'; }
     } else if (cpa <= ceiling) {
       /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
-      var cur = currentDailyOf(camp);
-      var baseDaily = cur > 0 ? cur : (rem > 0 ? Math.max(RULES.floorDaily, rem / 30) : RULES.floorDaily);
+      /* Base = GASTO REAL de hoje (nao o ritmo teorico saldo/dias, que pode ser gigante e gerar
+         escala absurda). "Escalar x5" = deixar gastar 5x o que ela ja gasta hoje. */
+      var baseDaily = Math.max(sp, RULES.floorDaily);
       var excellent = (roas >= RULES.excRoas) || (sp < 1 && sales > 0); /* ROAS>=2 OU vende sem gasto hoje */
       if (excellent) {
-        /* EXCELENTE -> escala x5 (ROAS otimo manda, independente de qtd de vendas/uso do orcamento). */
         target = baseDaily * RULES.scaleMult;
-        action = 'ESCALAR x' + RULES.scaleMult + (sp < 1 && sales > 0 ? ' (vende sem gasto hoje)' : ' (ROAS excelente ' + roasFmt + ')'); cls = 'd-good'; key = 'ESCALAR';
+        action = 'ESCALAR x' + RULES.scaleMult + ' p/ $' + Math.round(target) + (sp < 1 && sales > 0 ? ' (vende sem gasto hoje)' : ' (ROAS ' + roasFmt + ')'); cls = 'd-good'; key = 'ESCALAR';
       } else {
         /* ROAS BOM (1.5 a 1.9): aumento proporcional. % de 30% (1.5) a 70% (1.9).
-           Diario = vendas x CPA-limite x (1 + %). So aumenta se for acima do ritmo atual. */
+           Diario = vendas x CPA-limite x (1 + %). So aumenta se for acima do GASTO de hoje. */
         var pct = Math.max(RULES.aumPctLow, Math.min(RULES.aumPctHigh,
           RULES.aumPctLow + (roas - RULES.aumRoasLow) / (RULES.aumRoasHigh - RULES.aumRoasLow) * (RULES.aumPctHigh - RULES.aumPctLow)));
         var formula = Math.max(RULES.floorDaily, sales * RULES.cpaTarget * (1 + pct));
-        if (formula > cur) {
+        if (formula > sp) {
           target = formula;
           action = 'AUMENTAR p/ $' + Math.round(target) + ' (+' + Math.round(pct * 100) + '%, ROAS ' + roasFmt + ')'; cls = 'd-good'; key = 'AUMENTAR';
         } else {
-          target = null; /* ja tem orcamento >= proporcional -> nao precisa mexer */
+          target = null; /* ja gasta >= a fórmula -> nao precisa mexer */
           action = 'MANTER (ROAS ' + roasFmt + ', ja com orcamento)'; cls = 'd-good'; key = 'MANTER';
         }
       }
