@@ -893,17 +893,8 @@
       target = RULES.floorDaily;
       action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
     }
-    /* NUNCA deixar encerrar hoje: se passou das 23h BR e a campanha termina hoje e a regra
-       nao mexe na data (MANTER/Coletando), forca estender p/ amanha. */
-    var dleft = daysLeftOf(camp);
-    var lateBR = (new Date(Date.now() - 3 * 3600 * 1000).getUTCHours()) >= 23;
-    if (lateBR && dleft <= 1 && !target) {
-      target = Math.max(RULES.floorDaily, rem > 0 ? rem / 30 : RULES.floorDaily);
-      action = 'ESTENDER — nao encerrar hoje (passou das 23h)'; cls = 'd-warn'; key = 'ESTENDER';
-    }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
-    if (newEnd && newEnd <= brDatePlus(0)) newEnd = brDatePlus(1); /* nunca termina hoje */
     /* Assinatura da regra = TIPO (key). Nao inclui o valor, pra nao reaparecer o botao quando
        o alvo varia (ex: ESCALAR/AUMENTAR). Mesmo tipo aplicado hoje = nao mostra de novo. */
     var sig = target ? key : null;
@@ -1023,6 +1014,11 @@
         if (dLeft > 0 && remaining > 0) diarioMeta = fmtUSD(remaining / dLeft);
         var clsD = dLeft > 90 ? 'd-good' : (dLeft > 30 ? 'd-warn' : 'd-bad');
         initDays = '<span class="'+clsD+'">'+dLeft+' dias</span>';
+        /* AVISO: encerra hoje (dLeft<=1) e ja passou das 20h BR -> alerta na coluna Dias Rest. */
+        var brHourNow = new Date(Date.now() - 3*3600*1000).getUTCHours();
+        if (dLeft <= 1 && brHourNow >= 20) {
+          initDays = '<span class="d-bad" style="font-weight:700" title="A campanha encerra hoje e ja passou das 20h">&#9888; Encerra hoje!</span>';
+        }
         initEnd = stopD.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric'});
       }
       return '<tr data-cbo="'+i+'" data-status="'+st.group+'" data-error="'+(st.isError?'1':'')+'" data-name="'+camp.name.toLowerCase().replace(/"/g,'&quot;')+'">' +
@@ -1226,8 +1222,6 @@
     var dateInp = document.getElementById('cnewdate_'+i);
     var dateVal = dateInp ? dateInp.value : '';
     if (!dateVal) { alert('Selecione uma data antes de aplicar.'); return; }
-    /* NUNCA terminar hoje: se a data escolhida for hoje (ou passado), joga p/ amanha. */
-    if (dateVal <= brDatePlus(0)) { dateVal = brDatePlus(1); if (dateInp) dateInp.value = dateVal; }
     var btn = document.getElementById('csavebtn_'+i);
     if (btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
     /* Usa fim de dia no fuso BR (UTC-3). O stop_time/end_time do Meta aceita ISO 8601. */
