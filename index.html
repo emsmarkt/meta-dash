@@ -236,7 +236,7 @@
   function hasConv() { return !!(getRtTk() || getUtmTk()); }
   /* URL do Worker (Cloudflare) FIXA no codigo — igual p/ todos que acessam (nao pede a cada um).
      Se mudar o worker, troque so esta linha. (localStorage 'wk_url' ainda sobrescreve, se existir.) */
-  var WK_URL_DEFAULT = 'https://meta-robo-cbo.emersondomarketing.workers.dev';
+  var WK_URL_DEFAULT = 'https://meta-robo.emersondomarketing.workers.dev';
   function getWkUrl() { try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
   /* Cambio R$->US$ p/ converter o custo do RedTrack (que vem em reais). */
   function getFx() { try { var v = parseFloat(localStorage.getItem('md_fx')); return (v && v > 0) ? v : 5.1; } catch(e) { return 5.1; } }
