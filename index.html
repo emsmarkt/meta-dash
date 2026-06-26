@@ -58,12 +58,16 @@
 }
 /* ── Tooltip estilizado de horarios de venda (aba CBO) ── */
 #mdb .sale-wrap{position:relative;cursor:help;border-bottom:1px dotted #58a6ff}
-#mdb .sale-tip{display:none;position:absolute;z-index:50;left:50%;bottom:100%;transform:translateX(-50%);
-  margin-bottom:8px;min-width:190px;max-width:240px;max-height:280px;overflow-y:auto;
+/* Tooltip usa position:FIXED, posicionado via JS (getBoundingClientRect) no hover.
+   Isso o tira de QUALQUER container com overflow (a .tbl-wrap tem overflow:auto +
+   max-height:64vh, que cortava o tooltip da 1a linha). O JS decide se abre p/ cima
+   ou p/ baixo conforme o espaco disponivel e seta left/top diretamente. */
+#mdb .sale-tip{display:none;position:fixed;z-index:9998;
+  min-width:190px;max-width:240px;max-height:280px;overflow-y:auto;
   background:#0d1117;border:1px solid #30363d;border-radius:8px;
   padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.55);
   font-size:12px;line-height:1.5;color:#c9d1d9;text-align:left;white-space:nowrap}
-#mdb .sale-wrap:hover .sale-tip{display:block}
+#mdb .sale-tip.tip-show{display:block}
 #mdb .sale-tip-hd{display:flex;justify-content:space-between;gap:14px;
   color:#8b949e;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
   padding-bottom:4px;margin-bottom:4px;border-bottom:1px solid #21262d}
@@ -761,7 +765,10 @@
       return fetch(url, { headers: {'Accept':'application/json'} })
         .then(function(r){ return r.json(); })
         .then(function(rows) {
-          if (!Array.isArray(rows)) return; /* {error:...} -> ignora, fica no fallback */
+          /* Erro ({error:...}) OU array vazio [] (campanha sem custo casado no RedTrack,
+             ex: "Monica 06" cujo gasto so existe no Meta) -> NAO seta cumCostByHour aqui;
+             deixa p/ o fallback Meta abaixo. (Confirmado: RT devolve [] nesse caso.) */
+          if (!Array.isArray(rows) || !rows.length) return;
           var costH = new Array(24); var i;
           for (i = 0; i < 24; i++) costH[i] = 0;
           rows.forEach(function(row) {
@@ -773,6 +780,7 @@
           var cum = new Array(24); var acc = 0;
           for (i = 0; i < 24; i++) { acc += costH[i]; cum[i] = acc; }
           c._conv.cumCostByHour = cum;
+          c._conv.costSrc = 'rt'; /* fonte: RedTrack (BR, exato) */
         })
         .catch(function(){ /* defensivo: sem custo por hora p/ esta campanha */ });
     }
@@ -781,6 +789,63 @@
     function nextBatch() {
       if (idx >= targets.length) return Promise.resolve();
       var slice = targets.slice(idx, idx + BATCH); idx += BATCH;
+      return Promise.all(slice.map(fetchOne)).then(nextBatch);
+    }
+    /* Apos o RedTrack, tenta o fallback Meta nas campanhas que ficaram sem custo por hora. */
+    return nextBatch()
+      .then(function(){ return fetchSaleHourCostMeta(targets, dates); })
+      .catch(function(){});
+  }
+
+  /* ── FALLBACK de custo por HORA via META (Problema 2) ──
+     Para campanhas que TEM vendas com horario mas NAO casaram custo no RedTrack
+     (gasto so existe no Meta, ex: "Monica 06"), busca o gasto por hora no Meta via
+     insights com breakdown horario e monta o mesmo array de 24h de custo ACUMULADO
+     em US$ (c._conv.cumCostByHour), para o tooltip cair no Caso A (gasto/ROAS por venda).
+     CAVEAT DE FUSO: o breakdown 'hourly_stats_aggregated_by_advertiser_time_zone' e no
+     fuso da CONTA (advertiser_time_zone), que pode NAO ser BR. Logo o gasto por hora pode
+     ficar deslocado ~1-3h em relacao aos horarios de venda (BR/UTC-3). E aproximacao;
+     ainda assim mostra o gasto, que e o que o usuario quer. costSrc='meta' marca isso no
+     rodape do tooltip. O spend do Meta JA vem em US$ na conta -> NAO divide por FX. */
+  function fetchSaleHourCostMeta(targets, dates) {
+    /* So as que ficaram sem custo por hora do RedTrack. */
+    var miss = targets.filter(function(c){ return c._conv && !c._conv.cumCostByHour; });
+    if (!miss.length) return Promise.resolve();
+    /* Periodo de 1 dia (garantido pelo chamador): usa time_range com as datas do periodo. */
+    var periodParam = 'time_range=' + encodeURIComponent(JSON.stringify({ since: dates.since, until: dates.until }));
+    function fetchOne(c) {
+      var tk = c._tk; /* mesmo token per-campanha usado no resto do load Meta */
+      if (!tk) return Promise.resolve();
+      var url = API + '/' + c.id + '/insights?fields=spend'
+              + '&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone'
+              + '&' + periodParam + '&access_token=' + tk;
+      return fj(url)
+        .then(function(d) {
+          var rows = (d && d.data) ? d.data : null;
+          if (!Array.isArray(rows) || !rows.length) return; /* sem dado -> mantem Caso B */
+          var costH = new Array(24); var i;
+          for (i = 0; i < 24; i++) costH[i] = 0;
+          var any = false;
+          rows.forEach(function(row) {
+            /* formato "13:00:00 - 13:59:59" -> hora inicial = 13 */
+            var hs = row.hourly_stats_aggregated_by_advertiser_time_zone || '';
+            var h = parseInt(String(hs).slice(0, 2), 10);
+            if (isNaN(h) || h < 0 || h > 23) return;
+            var sp = parseFloat(row.spend) || 0; /* Meta ja vem em US$ -> NAO divide por FX */
+            costH[h] += sp; any = true;
+          });
+          if (!any) return;
+          var cum = new Array(24); var acc = 0;
+          for (i = 0; i < 24; i++) { acc += costH[i]; cum[i] = acc; }
+          c._conv.cumCostByHour = cum;
+          c._conv.costSrc = 'meta'; /* fonte: Meta (fuso da conta) */
+        })
+        .catch(function(){ /* defensivo: falha de rede nao quebra o render */ });
+    }
+    var idx = 0, BATCH = 6;
+    function nextBatch() {
+      if (idx >= miss.length) return Promise.resolve();
+      var slice = miss.slice(idx, idx + BATCH); idx += BATCH;
       return Promise.all(slice.map(fetchOne)).then(nextBatch);
     }
     return nextBatch().catch(function(){});
@@ -1443,10 +1508,14 @@
                      + '<span class="sale-r '+roasCls+'">'+(gAcc > 0 ? fmtRoas(rAcc) : '—')+'</span>'
                      + '</div>';
           });
+          /* Rodape: se o custo veio do Meta (fallback), avisa do fuso da conta. */
+          var ftTxt = (camp._conv && camp._conv.costSrc === 'meta')
+            ? 'acumulado ate cada venda · gasto via Meta (fuso da conta, ~aprox.)'
+            : 'acumulado ate cada venda (fuso BR)';
           salesTipHtml = '<span class="sale-tip">'
                        + '<div class="sale-tip-hd"><span>Hora</span><span>Gasto</span><span>ROAS</span></div>'
                        + rowsTip
-                       + '<div class="sale-tip-ft">acumulado ate cada venda (fuso BR)</div>'
+                       + '<div class="sale-tip-ft">'+ftTxt+'</div>'
                        + '</span>';
         } else {
           /* Caso B (multi-dia ou sem custo por hora): so hora + nº; cabecalho com o agregado do dia. */
@@ -1600,6 +1669,7 @@
       var tbtn = document.getElementById('ctgl_'+i);
       if (tbtn) tbtn.addEventListener('click', function() { toggleCampaign(i); });
     });
+    bindSaleTips();
     /* Humor do dia na faixa de diagnostico */
     var diag2 = document.getElementById('rtDiag');
     if (diag2 && isToday && dayMoodObj) {
@@ -1621,6 +1691,43 @@
       var okName = !q || nm.indexOf(q) >= 0;
       var okStatus = (cboStatus === 'all') || (cboStatus === 'error' ? err : st === cboStatus);
       tr.style.display = (okName && okStatus) ? '' : 'none';
+    });
+  }
+
+  /* ── Posicionamento robusto do tooltip de vendas (Problema 1) ──
+     O tooltip e position:fixed; aqui medimos o cell com getBoundingClientRect e
+     decidimos abrir p/ CIMA ou p/ BAIXO conforme o espaco. Assim a 1a linha (sem
+     espaco acima) abre p/ baixo e fica 100% visivel, sem ser cortada pela .tbl-wrap. */
+  function bindSaleTips() {
+    var TIP_H = 290; /* altura max estimada (~max-height:280 + paddings/bordas) */
+    var wraps = document.querySelectorAll('#cboTbody .sale-wrap');
+    wraps.forEach(function(wrap) {
+      var tip = wrap.querySelector('.sale-tip');
+      if (!tip) return;
+      function place() {
+        var r = wrap.getBoundingClientRect();
+        var vh = window.innerHeight || document.documentElement.clientHeight;
+        var vw = window.innerWidth || document.documentElement.clientWidth;
+        /* Mostra primeiro (display:block) p/ medir a altura real do tooltip. */
+        tip.classList.add('tip-show');
+        var th = Math.min(tip.offsetHeight || TIP_H, TIP_H);
+        var spaceAbove = r.top;
+        /* Regra: se nao cabe acima, abre p/ baixo; senao, p/ cima (comportamento antigo). */
+        var openDown = spaceAbove < (th + 10);
+        var top = openDown ? (r.bottom + 8) : (r.top - th - 8);
+        if (top < 6) top = 6;
+        if (top + th > vh - 6) top = Math.max(6, vh - th - 6);
+        /* Centraliza horizontalmente no cell, mas mantem dentro da viewport. */
+        var tw = tip.offsetWidth || 220;
+        var left = r.left + r.width / 2 - tw / 2;
+        if (left < 6) left = 6;
+        if (left + tw > vw - 6) left = Math.max(6, vw - tw - 6);
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+      }
+      function hide() { tip.classList.remove('tip-show'); }
+      wrap.addEventListener('mouseenter', place);
+      wrap.addEventListener('mouseleave', hide);
     });
   }
 
