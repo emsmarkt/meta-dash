@@ -153,7 +153,7 @@
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
       <input class="srch" id="histSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
       <span style="font-size:12px;color:#6e7681">Dia:</span>
-      <input type="date" id="histDay" class="cbo-date" style="width:150px">
+      <input type="date" id="histDay" class="cbo-date" style="width:150px;cursor:pointer">
       <button class="pill" id="histDayClear">Todos os dias</button>
       <span style="font-size:12px;color:#6e7681;margin-left:6px">Origem:</span>
       <button class="pill on" id="histSrcAll" data-src="all">Todas</button>
@@ -1690,7 +1690,13 @@
   var histSrchEl = document.getElementById('histSrch');
   if (histSrchEl) histSrchEl.addEventListener('input', renderHist);
   var histDayEl = document.getElementById('histDay');
-  if (histDayEl) histDayEl.addEventListener('change', renderHist);
+  if (histDayEl) {
+    histDayEl.addEventListener('change', renderHist);
+    /* Ao clicar/focar no campo inteiro, abre o calendario nativo direto (em vez de digitar) */
+    var openHistPicker = function() { try { if (typeof histDayEl.showPicker === 'function') histDayEl.showPicker(); } catch (e) {} };
+    histDayEl.addEventListener('click', openHistPicker);
+    histDayEl.addEventListener('focus', openHistPicker);
+  }
   var histDayClearEl = document.getElementById('histDayClear');
   if (histDayClearEl) histDayClearEl.addEventListener('click', function() { var d = document.getElementById('histDay'); if (d) d.value = ''; renderHist(); });
   /* Filtro de origem: Todas / Manual / Robo */
