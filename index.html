@@ -389,15 +389,28 @@
     /* Conta bloqueada / com pendencia: NAO conta como ativa, vai pro filtro Erro. */
     if (camp._acctStatus === 2) { return { cls:'b-r', txt:'CONTA BLOQUEADA', group:'other', issue:issue || 'Conta de anuncios desabilitada', isError:true, note:'' }; }
     if (camp._acctStatus === 3) { return { cls:'b-r', txt:'CONTA PENDENTE', group:'other', issue:issue || 'Pendencia de pagamento na conta', isError:true, note:'' }; }
-    /* Nota dos anuncios (X/Y) quando ha rejeitados ou com erro. */
-    var tot = camp._adTotal || 0, rej = camp._adRejected || 0, werr = camp._adWithErr || 0;
-    var note = '';
-    if (rej > 0) note = rej + '/' + tot + ' anuncios rejeitados';
-    else if (werr > 0) note = werr + '/' + tot + ' anuncios c/ erro';
-    var delivering = (eff === 'ACTIVE' || eff === 'WITH_ISSUES');
-    /* Campanha entregando mas com anuncio rejeitado/erro: ATIVO em tarja amarela. */
-    if (delivering && note) {
-      return { cls:'b-a', txt:'ATIVO', group:'active', issue: (issue ? issue + ' | ' : '') + note, isError:true, note: note };
+    /* Nota dos anuncios (X/Y ativos): vale para TODAS as campanhas, mesmo so com PAUSED. */
+    var tot = camp._adTotal || 0, act = camp._adActive || 0, rej = camp._adRejected || 0, werr = camp._adWithErr || 0, pau = camp._adPaused || 0;
+    if (camp._adsLoaded && tot > 0) {
+      var note = act + '/' + tot + ' anuncios ativos';
+      var det = [];
+      if (rej > 0) det.push(rej + ' rejeitado' + (rej > 1 ? 's' : ''));
+      if (werr > 0) det.push(werr + ' com erro');
+      if (pau > 0 && act < tot) det.push(pau + ' pausado' + (pau > 1 ? 's' : ''));
+      if (det.length) note += ' · ' + det.join(', ');
+      var delivering = (eff === 'ACTIVE' || eff === 'WITH_ISSUES');
+      if (act === tot) {
+        /* Todos ativos: OK, mantem o badge normal da campanha, sem marcar erro. */
+        return { cls:info.cls, txt:info.txt, group:info.group, issue:issue, isError: info.cls === 'b-r', note:note, noteCls:'ok' };
+      }
+      if (act === 0) {
+        /* Critico: campanha entregando/ativa mas NENHUM anuncio ativo. */
+        if (delivering) return { cls:'b-r', txt:'SEM ANUNCIO ATIVO', group:'active', issue: (issue ? issue + ' | ' : '') + note, isError:true, note:note, noteCls:'crit' };
+        return { cls:info.cls, txt:info.txt, group:info.group, issue:issue, isError: info.cls === 'b-r', note:note, noteCls:'crit' };
+      }
+      /* Parcial (0 < ativos < total): alerta ambar se estiver entregando. */
+      if (delivering) return { cls:'b-a', txt:'ATIVO', group:'active', issue: (issue ? issue + ' | ' : '') + note, isError:true, note:note, noteCls:'warn' };
+      return { cls:info.cls, txt:info.txt, group:info.group, issue:issue, isError: info.cls === 'b-r', note:note, noteCls:'warn' };
     }
     /* Issue de campanha mesmo estando ACTIVE (sem dados de anuncio): amarelo. */
     if (issue && info.cls === 'b-gr') { return { cls:'b-a', txt:'ATIVO', group:'active', issue:issue, isError:true, note:'' }; }
@@ -944,10 +957,15 @@
             adsRes = res[2];
           }
           var ads = (adsRes && adsRes.data) ? adsRes.data : [];
-          c._adTotal = ads.length;
-          c._adRejected = ads.filter(function(a){ return (a.effective_status||'').toUpperCase()==='DISAPPROVED'; }).length;
-          c._adWithErr = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
-        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adRejected=0; c._adWithErr=0; });
+          /* Total relevante: exclui ARCHIVED/DELETED do denominador. */
+          var relevantes = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s!=='ARCHIVED' && s!=='DELETED'; });
+          c._adTotal = relevantes.length;
+          c._adActive = relevantes.filter(function(a){ return (a.effective_status||'').toUpperCase()==='ACTIVE'; }).length;
+          c._adRejected = relevantes.filter(function(a){ return (a.effective_status||'').toUpperCase()==='DISAPPROVED'; }).length;
+          c._adWithErr = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
+          c._adPaused = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='PAUSED'||s==='ADSET_PAUSED'||s==='CAMPAIGN_PAUSED'; }).length;
+          c._adsLoaded = true;
+        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; });
       })).then(nextBatch);
     }
     return nextBatch();
@@ -1506,7 +1524,7 @@
       return '<tr data-cbo="'+i+'" data-status="'+st.group+'" data-error="'+(st.isError?'1':'')+'" data-name="'+camp.name.toLowerCase().replace(/"/g,'&quot;')+'">' +
         '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
         '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
-        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:#f85149;margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'<div style="margin-top:5px"><button class="tgl-btn '+(((camp.status||"").toUpperCase()==="ACTIVE")?"tgl-on":"tgl-off")+'" id="ctgl_'+i+'">'+(((camp.status||"").toUpperCase()==="ACTIVE")?"⏸ Pausar":"▶ Ativar")+'</button></div></td>' +
+        '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:'+(st.noteCls==='ok'?'#8b949e':(st.noteCls==='warn'?'#d29922':'#f85149'))+';margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'<div style="margin-top:5px"><button class="tgl-btn '+(((camp.status||"").toUpperCase()==="ACTIVE")?"tgl-on":"tgl-off")+'" id="ctgl_'+i+'">'+(((camp.status||"").toUpperCase()==="ACTIVE")?"⏸ Pausar":"▶ Ativar")+'</button></div></td>' +
         '<td style="font-size:12px">'+fmtUSD(lb)+'</td>' +
         '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
         '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+fmtUSD(remaining)+'</td>' +
