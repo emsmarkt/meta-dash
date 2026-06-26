@@ -55,7 +55,28 @@
   #mdb th,#mdb td{padding:8px 8px;font-size:11px}
   #mdb th:first-child,#mdb td:first-child{max-width:120px}
   #mdb .save-btn{padding:6px 10px}
-}</style>
+}
+/* ── Tooltip estilizado de horarios de venda (aba CBO) ── */
+#mdb .sale-wrap{position:relative;cursor:help;border-bottom:1px dotted #58a6ff}
+#mdb .sale-tip{display:none;position:absolute;z-index:50;left:50%;bottom:100%;transform:translateX(-50%);
+  margin-bottom:8px;min-width:190px;max-width:240px;max-height:280px;overflow-y:auto;
+  background:#0d1117;border:1px solid #30363d;border-radius:8px;
+  padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.55);
+  font-size:12px;line-height:1.5;color:#c9d1d9;text-align:left;white-space:nowrap}
+#mdb .sale-wrap:hover .sale-tip{display:block}
+#mdb .sale-tip-hd{display:flex;justify-content:space-between;gap:14px;
+  color:#8b949e;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
+  padding-bottom:4px;margin-bottom:4px;border-bottom:1px solid #21262d}
+#mdb .sale-tip-hd2{color:#8b949e;font-size:11px;padding-bottom:4px;margin-bottom:4px;
+  border-bottom:1px solid #21262d}
+#mdb .sale-tip-hd2 b{color:#c9d1d9;font-weight:600}
+#mdb .sale-row{display:flex;justify-content:space-between;gap:14px;padding:1px 0}
+#mdb .sale-row .sale-h{color:#58a6ff;font-variant-numeric:tabular-nums;font-weight:600;min-width:42px}
+#mdb .sale-row .sale-g{color:#c9d1d9;font-variant-numeric:tabular-nums;text-align:right;flex:1}
+#mdb .sale-row .sale-r{font-variant-numeric:tabular-nums;text-align:right;min-width:38px;font-weight:600;font-size:12px}
+#mdb .sale-row .sale-n{color:#8b949e;text-align:right;flex:1}
+#mdb .sale-tip-ft{color:#6e7681;font-size:10px;margin-top:5px;padding-top:4px;
+  border-top:1px solid #21262d;white-space:normal}</style>
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
@@ -697,6 +718,60 @@
     var d = new Date(ms - 3 * 3600 * 1000); /* desloca p/ ler como Brasilia via getUTC* */
     return ('0'+d.getUTCHours()).slice(-2) + ':' + ('0'+d.getUTCMinutes()).slice(-2);
   }
+  /* Hora (0-23) no fuso BRASIL de um timestamp (ms). Casa com o campo hour_of_day do report. */
+  function hourBR(ms) {
+    var d = new Date(ms - 3 * 3600 * 1000);
+    return d.getUTCHours();
+  }
+
+  /* ── Custo por HORA das campanhas (RedTrack /report group=hour_of_day) ──
+     So faz sentido em periodo de UM dia (today/yesterday/custom de 1 dia): o report
+     agrupa por hora do dia (0-23). Filtra por sub3 (=campaign_id) e guarda, por campanha,
+     um array de 24 posicoes com o CUSTO ACUMULADO em US$ ate o fim de cada hora
+     (custo R$ do RedTrack / cambio). Anexa em c._conv.cumCostByHour. So serve ao tooltip;
+     NAO altera contagem nem o gasto total (_periodSpend). Defensivo: falha nao quebra render. */
+  function fetchSaleHourCost(camps) {
+    var tk = getRtTk();
+    if (!tk) return Promise.resolve();
+    var dates = periodDates();
+    if (!dates) return Promise.resolve();
+    /* hour_of_day so e fiel num unico dia. Em multi-dia o tooltip cai p/ o cabecalho do dia. */
+    if (dates.since !== dates.until) return Promise.resolve();
+    var fx = getFx();
+    /* So busca para campanhas que tem vendas com horario (senao nao ha tooltip por venda). */
+    var targets = camps.filter(function(c){ return c._conv && c._conv.saleTimes && c._conv.saleTimes.length; });
+    if (!targets.length) return Promise.resolve();
+    function fetchOne(c) {
+      var url = RT_API + '/report?api_key=' + encodeURIComponent(tk)
+              + '&group=hour_of_day&date_from=' + dates.since + '&date_to=' + dates.until
+              + '&per=1000&sub3=' + encodeURIComponent(String(c.id));
+      return fetch(url, { headers: {'Accept':'application/json'} })
+        .then(function(r){ return r.json(); })
+        .then(function(rows) {
+          if (!Array.isArray(rows)) return; /* {error:...} -> ignora, fica no fallback */
+          var costH = new Array(24); var i;
+          for (i = 0; i < 24; i++) costH[i] = 0;
+          rows.forEach(function(row) {
+            var h = parseInt(row.hour_of_day, 10);
+            if (isNaN(h) || h < 0 || h > 23) return;
+            var costRs = parseFloat(row.cost) || 0;
+            costH[h] += costRs / fx; /* R$ -> US$ */
+          });
+          var cum = new Array(24); var acc = 0;
+          for (i = 0; i < 24; i++) { acc += costH[i]; cum[i] = acc; }
+          c._conv.cumCostByHour = cum;
+        })
+        .catch(function(){ /* defensivo: sem custo por hora p/ esta campanha */ });
+    }
+    /* Em pequenos lotes p/ nao disparar dezenas de chamadas de uma vez. */
+    var idx = 0, BATCH = 6;
+    function nextBatch() {
+      if (idx >= targets.length) return Promise.resolve();
+      var slice = targets.slice(idx, idx + BATCH); idx += BATCH;
+      return Promise.all(slice.map(fetchOne)).then(nextBatch);
+    }
+    return nextBatch().catch(function(){});
+  }
 
   /* ── Utmify (fallback) ── */
   function fetchUtmify(camps) {
@@ -821,6 +896,9 @@
         return fetchConversions(camps).then(function() {
           /* Horarios exatos das vendas (so para o tooltip de hover). Defensivo: se falhar, segue sem tooltip. */
           return fetchSaleTimes(camps);
+        }).then(function() {
+          /* Custo por hora p/ ROAS acumulado por venda no tooltip. So em periodo de 1 dia. */
+          return fetchSaleHourCost(camps);
         }).then(function() {
           /* GASTO pelo RedTrack (mesma fonte e fuso das vendas). O custo do RedTrack vem em R$;
              converte p/ US$ pelo cambio. Se a campanha nao casou no RedTrack, mantem o gasto do Meta. */
@@ -1323,13 +1401,51 @@
       var ics = (hasC && camp._conv) ? (camp._conv.ic||0) : 0;
       var fatNum = sales * 260, roasNum = sp > 0 ? fatNum/sp : 0, lucroNum = fatNum - sp;
       var pct = function(n,d){ return (d>0) ? (n/d*100).toFixed(1).replace('.',',')+'%' : '---'; };
-      /* Tooltip de hover com a HORA EXATA de cada venda (fuso BR). So quando ha saleTimes. */
+      /* ── Tooltip estilizado com a HORA de cada venda (fuso BR) ──
+         Uma venda por linha. Quando ha custo por hora (cumCostByHour), mostra tambem o
+         GASTO ACUMULADO e o ROAS ACUMULADO no instante de cada venda. Senao, cai p/ um
+         cabecalho com o gasto/ROAS do dia e lista so a hora + nº da venda. So quando ha saleTimes. */
       var saleTimesArr = (hasC && camp._conv && camp._conv.saleTimes) ? camp._conv.saleTimes : null;
-      var salesTip = '';
+      var salesTipHtml = '';
       if (saleTimesArr && saleTimesArr.length) {
-        var horarios = saleTimesArr.map(function(ms){ return hhmmBR(ms); }).join(', ');
-        salesTip = ' title="Vendas as: ' + horarios.replace(/"/g,'') + '"'
-                 + ' style="cursor:help;border-bottom:1px dotted #58a6ff"';
+        var cumCost = (camp._conv && camp._conv.cumCostByHour) ? camp._conv.cumCostByHour : null;
+        var fmtRoas = function(r){ return (r > 0) ? r.toFixed(2).replace('.',',') : '---'; };
+        var rowsTip = '';
+        if (cumCost) {
+          /* Caso A: gasto/ROAS por venda (acumulados ate a hora da venda). */
+          saleTimesArr.forEach(function(ms, k) {
+            var h = hourBR(ms);
+            var gAcc = cumCost[h] || 0;        /* US$ acumulado ate o fim da hora da venda */
+            var vAcc = k + 1;                  /* nº de vendas ate aqui (inclusive) */
+            var rAcc = gAcc > 0 ? (vAcc * 260) / gAcc : 0;
+            var roasCls = rAcc >= 1.5 ? 'd-good' : (rAcc >= 1.3 ? 'd-warn' : (rAcc > 0 ? 'd-bad' : ''));
+            rowsTip += '<div class="sale-row">'
+                     + '<span class="sale-h">'+hhmmBR(ms)+'</span>'
+                     + '<span class="sale-g">'+(gAcc > 0 ? fmtUSD(gAcc) : '—')+'</span>'
+                     + '<span class="sale-r '+roasCls+'">'+(gAcc > 0 ? fmtRoas(rAcc) : '—')+'</span>'
+                     + '</div>';
+          });
+          salesTipHtml = '<span class="sale-tip">'
+                       + '<div class="sale-tip-hd"><span>Hora</span><span>Gasto</span><span>ROAS</span></div>'
+                       + rowsTip
+                       + '<div class="sale-tip-ft">acumulado ate cada venda (fuso BR)</div>'
+                       + '</span>';
+        } else {
+          /* Caso B (multi-dia ou sem custo por hora): so hora + nº; cabecalho com o agregado do dia. */
+          saleTimesArr.forEach(function(ms, k) {
+            rowsTip += '<div class="sale-row"><span class="sale-h">'+hhmmBR(ms)+'</span>'
+                     + '<span class="sale-n">'+(k+1)+'ª venda</span></div>';
+          });
+          var hdGasto = sp > 0 ? fmtUSD(sp) : '—';
+          var hdRoasCls = roasNum >= 1.5 ? 'd-good' : (roasNum >= 1.3 ? 'd-warn' : (roasNum > 0 ? 'd-bad' : ''));
+          var hdRoas = roasNum > 0 ? roasNum.toFixed(2).replace('.',',') : '—';
+          salesTipHtml = '<span class="sale-tip">'
+                       + '<div class="sale-tip-hd2">ROAS/gasto do dia: '
+                       + '<b class="'+hdRoasCls+'">'+hdRoas+'</b> · <b>'+hdGasto+'</b></div>'
+                       + rowsTip
+                       + '<div class="sale-tip-ft">horarios das vendas (fuso BR)</div>'
+                       + '</span>';
+        }
       }
       var sem = '<span style="color:#6e7681;font-size:11px">sem token</span>';
       var utmVendas, utmCPA, utmIC, utmCPI, pcrTxt, convTxt, iccrTxt, fatTxt, lucroTxt, roasTxt, sugTxt;
@@ -1397,7 +1513,7 @@
         '<td style="font-size:12px;border-left:1px solid #21262d">'+periodSpend+'</td>' +
         '<td style="font-size:12px">'+clicks+'</td>' +
         '<td style="font-size:12px">'+cpc+'</td>' +
-        '<td style="font-size:12px;border-left:1px solid #21262d">'+(salesTip?('<span'+salesTip+'>'+utmVendas+'</span>'):utmVendas)+'</td>' +
+        '<td style="font-size:12px;border-left:1px solid #21262d">'+(salesTipHtml?('<span class="sale-wrap">'+utmVendas+salesTipHtml+'</span>'):utmVendas)+'</td>' +
         '<td style="font-size:12px">'+utmCPA+'</td>' +
         '<td style="font-size:12px">'+utmIC+'</td>' +
         '<td style="font-size:12px">'+utmCPI+'</td>' +
