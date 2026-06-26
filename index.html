@@ -44,6 +44,26 @@
   #mdb tr:hover td:first-child{background:#1c2128}
   #mdb .modal{min-width:0;width:94%}
   #mdb .foot-note{font-size:10px}
+  /* ---- Item 3: areas de toque confortaveis (~38-40px) sem inflar desktop ---- */
+  #mdb .tgl-btn{padding:9px 12px;font-size:12px;min-height:38px}
+  #mdb td #csug_0,#mdb .sugcell .save-btn,#mdb td .save-btn{padding:8px 12px;font-size:12px;min-height:38px}
+  #mdb .save-btn{padding:9px 13px;font-size:12px;min-height:38px}
+  #mdb .cbo-date{padding:9px 9px;font-size:12px;min-height:38px}
+  #mdb .cbo-inp{padding:9px 9px;font-size:13px;min-height:38px}
+  /* espacinho entre Pausar/Ativar e demais acoes p/ nao errar o toque */
+  #mdb .tgl-btn,#mdb td .save-btn{margin:2px 0}
+  /* 1a coluna (campanha) sinaliza que e tocavel p/ abrir o card de detalhes (so na tabela CBO) */
+  #mdb #cboTbody tr[data-cbo] td:first-child{cursor:pointer;-webkit-tap-highlight-color:rgba(88,166,255,.18)}
+  #mdb #cboTbody tr[data-cbo] td:first-child::after{content:"\1F50D\FE0E ver detalhes";display:block;font-size:9.5px;color:#58a6ff;font-weight:400;margin-top:3px;opacity:.85}
+  /* ---- Item 4: card de detalhes da campanha (mobile) ---- */
+  #mdb .det-modal .modal{padding:18px 16px}
+  #mdb .det-row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #21262d;font-size:13px}
+  #mdb .det-row:last-of-type{border-bottom:none}
+  #mdb .det-row .det-k{color:#8b949e}
+  #mdb .det-row .det-v{color:#f0f6fc;font-weight:600;text-align:right}
+  #mdb .det-sug{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:13px;line-height:1.5}
+  #mdb .det-acts{display:flex;gap:10px;margin-top:14px}
+  #mdb .det-acts button{flex:1;min-height:42px;font-size:13px;justify-content:center}
 }
 @media (max-width:480px){
   #mdb{padding:8px 6px}
@@ -184,6 +204,8 @@
       <button class="pill on" id="histSrcAll" data-src="all">Todas</button>
       <button class="pill" id="histSrcManual" data-src="manual">&#9995; Manual</button>
       <button class="pill" id="histSrcRobo" data-src="robo">&#129302; Rob&#244;</button>
+      <span style="font-size:12px;color:#6e7681;margin-left:6px">Estrutura:</span>
+      <select id="histTkSel" class="cbo-date" style="width:170px;cursor:pointer"><option value="all">Todas</option></select>
       <span style="flex:1"></span>
       <button class="btn" id="histClear" style="border-color:#f85149;color:#f85149">&#128465; Limpar hist&#243;rico</button>
     </div>
@@ -213,6 +235,17 @@
       <div class="mfoot">
         <button class="btn" id="btnModalCancel">Cancelar</button>
         <button class="btn btn-blue" id="btnModalSave">Salvar e atualizar</button>
+      </div>
+    </div>
+  </div>
+  <!-- Item 4 (mobile): card de detalhes da campanha CBO -->
+  <div class="modal-bg det-modal" id="cboDetModal">
+    <div class="modal">
+      <h2 id="cboDetTitle" style="white-space:normal;line-height:1.3">Campanha</h2>
+      <p id="cboDetAcct" style="margin-bottom:10px"></p>
+      <div id="cboDetBody"></div>
+      <div class="mfoot" style="margin-top:14px">
+        <button class="btn" id="cboDetClose" style="width:100%;justify-content:center">Fechar</button>
       </div>
     </div>
   </div>
@@ -248,6 +281,12 @@
     /* ROAS de corte: abaixo disso -> CORTAR (+364 dias), independente do dia.
        Entre minRoas (1.3) e a meta (1.5) -> LIMITA no gasto. >= 1.5 -> escala. */
     minRoas: 1.3,
+    /* PISO de ROAS p/ "ganhar" (acima dele = vencedora/nao reduz). So vale no ramo de ATE 5 vendas:
+       <=2 vendas -> accBase (1.5); >2 vendas E dia BOM -> accGood (1.35); >2 vendas dia nao-bom -> accBase (1.5).
+       Abaixo do piso: entre 1,3 e o piso -> LIMITA; abaixo de 1,3 -> CORTA. */
+    accBase: 1.5,           // piso de ROAS padrao (<=2 vendas, ou >2 vendas em dia nao-bom)
+    accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
+    accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 110, // gastou >= isso e 0 venda -> CORTA
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
@@ -1096,17 +1135,24 @@
      (nao corta nem mexe, mesmo que tenha gastado num burst sem venda na ultima hora).
      So corta/limita quem esta ACIMA do teto ou sem venda. */
   function suggestRule(camp, mood) {
+    /* TESTE — fora das regras: campanhas com "TESTE" no nome NUNCA recebem corte/escala/limite.
+       Retorno neutro (target/newEnd null) garante que nenhum botao de aplicar aparece. */
+    if ((camp.name || '').toUpperCase().indexOf('TESTE') >= 0) {
+      return { action: 'TESTE — fora das regras', cls: 'd-warn', target: null, newEnd: null, key: 'TESTE', sig: null };
+    }
     var sp = camp._periodSpend || 0;
     var sales = (camp._conv ? camp._conv.sales : 0) || 0;
     var roas = sp > 0 ? (sales*260)/sp : 0;
     var cpa = sales > 0 ? sp/sales : Infinity;
     var rem = remainingOf(camp);
-    var ceiling = (mood === 'good' && sales >= 2) ? RULES.cpaRopeGood : RULES.cpaTarget;
     var target = null, action = '', cls = 'd-warn', key = '';
     var roasFmt = roas.toFixed(2).replace('.', ',');                       /* ROAS de hoje */
     var metaRoasTxt = (260 / RULES.cpaTarget).toFixed(1).replace('.', ','); /* meta de ROAS (ex: 1,5) */
-    /* ROAS minimo aceitavel: <=2 vendas -> 1.3 sempre; 3+ vendas -> 1.3 (bom) / 1.4 (normal) / 1.5 (ruim).
-       Abaixo dele = CORTAR; entre ele e a meta (1.5) = LIMITAR. */
+    /* PISO de ROAS p/ "ganhar" (so no ramo de ATE 5 vendas): accBase(1,5) por padrao;
+       accGood(1,35) em dia BOM com >2 vendas. Acima do piso = vencedora; entre 1,3 e o piso = LIMITAR;
+       abaixo de 1,3 = CORTAR. */
+    var minAcc = (mood === 'good' && sales > RULES.accGoodMinSales) ? RULES.accGood : RULES.accBase;
+    var minAccTxt = minAcc.toFixed(2).replace('.', ',');
     var cutFloor = RULES.minRoas; /* 1.3 fixo, independente do dia/vendas */
     var minRoasTxt = cutFloor.toFixed(1).replace('.', ',');
     /* CORTAR = empurra o termino p/ daqui cutDays (364). O diario vira saldo/364 (bem baixo). */
@@ -1134,8 +1180,9 @@
         target = null;
         action = 'MANTER (' + sales + ' vendas > ' + RULES.aumMaxSales + ', ROAS ' + roasFmt + ' — so corta se < ' + minRoasTxt + ')'; cls = 'd-good'; key = 'MANTER';
       }
-    } else if (cpa <= ceiling) {
-      /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
+    } else if (roas >= minAcc) {
+      /* VENCEDORA (vendeu e ROAS >= piso aceitavel) — regras valem mesmo com gasto < $100.
+         Gate por ROAS: piso = accBase(1,5) por padrao, ou accGood(1,35) em dia BOM com >2 vendas. */
       /* Base = GASTO REAL de hoje (nao o ritmo teorico saldo/dias, que pode ser gigante e gerar
          escala absurda). "Escalar x5" = deixar gastar 5x o que ela ja gasta hoje. */
       var baseDaily = Math.max(sp, RULES.floorDaily);
@@ -1158,10 +1205,10 @@
         }
       }
     } else if (roas >= cutFloor) {
-      /* VENDEU, ROAS abaixo da meta (1,5) mas ACIMA do minimo aceitavel -> LIMITAR no GASTO de hoje
-         (trava, nao mata). Ex: 1 venda ROAS 1,4 -> ~$175. */
+      /* VENDEU, ROAS abaixo do piso aceitavel mas ACIMA de 1,3 -> LIMITAR no GASTO de hoje
+         (trava, nao mata). Ex: 1 venda ROAS 1,42 < piso 1,5 -> trava no gasto. */
       target = Math.max(sp, RULES.floorDaily);
-      action = 'LIMITAR no gasto (~$' + Math.round(target) + ', ROAS ' + roasFmt + ' >= ' + minRoasTxt + ')'; cls = 'd-warn'; key = 'LIMITAR';
+      action = 'LIMITAR no gasto (~$' + Math.round(target) + ', ROAS ' + roasFmt + ' < piso ' + minAccTxt + ')'; cls = 'd-warn'; key = 'LIMITAR';
     } else {
       /* ROAS abaixo do minimo aceitavel = prejuizo -> CORTAR (empurra termino +364 dias). */
       target = cortarTarget;
@@ -1214,8 +1261,29 @@
   }
   /* Filtro de origem do historico: 'all' | 'manual' | 'robo'. */
   var histSrc = 'all';
+  /* Filtro por token/estrutura do Meta: 'all' ou um rotulo presente no historico. */
+  var histTk = 'all';
   /* Origem de uma entrada (entradas antigas sem 'source' contam como manual). */
   function histSourceOf(e) { return (e && e.source === 'robo') ? 'robo' : 'manual'; }
+  /* ===== Identificacao por TOKEN do Meta (separa estruturas; NUNCA expoe o token inteiro) ===== */
+  /* Id curto e estavel do token: ultimos 6 chars. */
+  function histTkId(tk) { tk = String(tk || ''); return tk ? tk.slice(-6) : ''; }
+  /* Deriva um rotulo de estrutura a partir do NOME da campanha (tags tipo [FO, [AE, [GW...). */
+  function histLabelFromName(name) {
+    name = String(name || '');
+    var m = name.match(/\[\s*([A-Za-z0-9]{1,6})/); /* primeiro [TAG */
+    if (m && m[1]) return m[1].toUpperCase();
+    return '';
+  }
+  /* Melhor rotulo disponivel p/ uma entrada (acct amigavel -> tag do nome -> "—"). */
+  function histTokenLabel(e, camp) {
+    if (e && e.acct) return e.acct;
+    if (camp && camp._accountName) return camp._accountName;
+    var fromName = histLabelFromName((e && e.name) || (camp && camp.name) || '');
+    if (fromName) return fromName;
+    if (e && e.tkId) return '…' + e.tkId;
+    return '—';
+  }
   /* Chave estavel p/ deduplicar entradas (evita duplicar a cada refresh do robo). */
   function histKeyOf(e) { return histSourceOf(e) + '|' + (e.id||'') + '|' + (e.t||'') + '|' + (e.sig||''); }
   /* Mescla entradas no md_hist sem duplicar (dedup por histKeyOf).
@@ -1308,7 +1376,9 @@
       dailyNew: (typeof chg.dailyNew === 'number') ? chg.dailyNew : null,
       endOld: chg.endOld || null,   /* yyyy-mm-dd */
       endNew: chg.endNew || null,   /* yyyy-mm-dd */
-      source: 'manual'              /* origem: aplicada pelo dashboard */
+      source: 'manual',             /* origem: aplicada pelo dashboard */
+      tkId: histTkId(camp._tk),     /* id CURTO do token (ult. 6 chars) — nunca o token inteiro */
+      acct: camp._accountName || histLabelFromName(camp.name) || '' /* rotulo amigavel da estrutura */
     };
     /* 1) cache/fallback offline no localStorage */
     pushHist(entry);
@@ -1363,9 +1433,27 @@
     var dayEl = document.getElementById('histDay');
     var q = srchEl ? srchEl.value.trim().toLowerCase() : '';
     var dayF = dayEl ? dayEl.value : '';
-    /* aplica filtros (origem + nome + dia) */
+    /* preenche o <select> de estrutura/token com os rotulos distintos presentes no historico */
+    var tkSel = document.getElementById('histTkSel');
+    if (tkSel) {
+      var labels = {}; all.forEach(function(e) { var L = histTokenLabel(e); if (L && L !== '—') labels[L] = true; });
+      var opts = Object.keys(labels).sort();
+      var want = 'all|' + opts.join('|');
+      if (tkSel.getAttribute('data-built') !== want) {
+        var cur = histTk;
+        tkSel.innerHTML = '<option value="all">Todas</option>' + opts.map(function(L) {
+          var ev = String(L).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+          return '<option value="' + ev + '">' + ev + '</option>';
+        }).join('');
+        if (cur !== 'all' && !labels[cur]) histTk = 'all';
+        tkSel.value = histTk;
+        tkSel.setAttribute('data-built', want);
+      }
+    }
+    /* aplica filtros (origem + estrutura/token + nome + dia) */
     var list = all.filter(function(e) {
       if (histSrc !== 'all' && histSourceOf(e) !== histSrc) return false;
+      if (histTk !== 'all' && histTokenLabel(e) !== histTk) return false;
       if (dayF && e.day !== dayF) return false;
       if (q && String(e.name || '').toLowerCase().indexOf(q) < 0) return false;
       return true;
@@ -1668,6 +1756,13 @@
       if (sbtn) sbtn.addEventListener('click', function() { applyRuleSuggestion(i); });
       var tbtn = document.getElementById('ctgl_'+i);
       if (tbtn) tbtn.addEventListener('click', function() { toggleCampaign(i); });
+      /* Item 4 (mobile): toque na 1a coluna (campanha) abre o card de detalhes.
+         So vincula em touch p/ nao mudar nada no desktop. */
+      if (isTouchDevice()) {
+        var tr = document.querySelector('#cboTbody tr[data-cbo="'+i+'"]');
+        var firstCell = tr ? tr.cells[0] : null;
+        if (firstCell) firstCell.addEventListener('click', function() { openCboDetail(i); });
+      }
     });
     bindSaleTips();
     /* Humor do dia na faixa de diagnostico */
@@ -1698,6 +1793,13 @@
      O tooltip e position:fixed; aqui medimos o cell com getBoundingClientRect e
      decidimos abrir p/ CIMA ou p/ BAIXO conforme o espaco. Assim a 1a linha (sem
      espaco acima) abre p/ baixo e fica 100% visivel, sem ser cortada pela .tbl-wrap. */
+  /* Detecta dispositivo de toque (mobile/tablet). Usado p/ ativar tooltip e card
+     de detalhes por TAP sem mudar nada no fluxo do desktop (hover). */
+  function isTouchDevice() {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
+           (window.matchMedia && window.matchMedia('(hover:none),(pointer:coarse)').matches);
+  }
+
   function bindSaleTips() {
     var TIP_H = 290; /* altura max estimada (~max-height:280 + paddings/bordas) */
     var wraps = document.querySelectorAll('#cboTbody .sale-wrap');
@@ -1725,10 +1827,121 @@
         tip.style.top = top + 'px';
         tip.style.left = left + 'px';
       }
-      function hide() { tip.classList.remove('tip-show'); }
+      function hide() { tip.classList.remove('tip-show'); if (openTip === tip) openTip = null; }
+      /* Desktop: hover continua identico. */
       wrap.addEventListener('mouseenter', place);
       wrap.addEventListener('mouseleave', hide);
+      /* Mobile/touch: tap no numero de vendas faz TOGGLE do tooltip.
+         - Se ja esta aberto -> fecha. Se fechado -> fecha qualquer outro e abre este.
+         - stopPropagation evita que o listener global (que fecha ao tocar FORA)
+           feche imediatamente o tooltip que acabamos de abrir. */
+      function toggle(e) {
+        /* So intervem em dispositivos de TOQUE; no desktop o hover ja resolve e
+           um click nao deve fechar/abrir nada (mantem comportamento identico). */
+        if (!isTouchDevice()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (tip.classList.contains('tip-show')) { hide(); return; }
+        if (openTip && openTip !== tip) openTip.classList.remove('tip-show');
+        place();
+        openTip = tip;
+      }
+      /* Mobile: tap no numero de vendas faz toggle. tip recebe stopPropagation
+         p/ rolagem interna do tooltip nao acionar o fechar-ao-tocar-fora. */
+      wrap.addEventListener('click', toggle);
+      tip.addEventListener('click', function(e) { e.stopPropagation(); });
     });
+  }
+  /* Fecha o tooltip de vendas aberto por toque quando se toca FORA dele.
+     Registrado UMA vez (guarda saleTipDocBound) p/ nao acumular listeners a cada render. */
+  var openTip = null;
+  if (!window._saleTipDocBound) {
+    window._saleTipDocBound = true;
+    var closeOpenTip = function(e) {
+      if (!openTip) return;
+      /* Se o toque foi dentro de um .sale-wrap ou do proprio tooltip, ignora
+         (esses casos ja sao tratados pelos handlers locais com stopPropagation). */
+      var t = e.target;
+      while (t && t.nodeType === 1) {
+        if (t.classList && (t.classList.contains('sale-wrap') || t.classList.contains('sale-tip'))) return;
+        t = t.parentNode;
+      }
+      openTip.classList.remove('tip-show');
+      openTip = null;
+    };
+    document.addEventListener('click', closeOpenTip);
+    document.addEventListener('touchstart', closeOpenTip, { passive: true });
+  }
+
+  /* ── Item 4 (mobile): card de detalhes da campanha ──
+     Toque na 1a coluna (campanha) abre um modal com os principais numeros
+     empilhados + a sugestao de regra + acoes (Pausar/Ativar e Aplicar). Apenas
+     UI: le cboData[i] e reusa o sistema de .modal-bg ja existente. Nao altera
+     nenhum calculo. So e acionado por toque (no desktop o gesto e ignorado). */
+  function closeCboDetail() {
+    var m = document.getElementById('cboDetModal');
+    if (m) m.classList.remove('show');
+  }
+  function openCboDetail(i) {
+    var camp = cboData[i];
+    if (!camp) return;
+    var m = document.getElementById('cboDetModal');
+    if (!m) return;
+    var hasC = hasConv();
+    var lb = parseFloat(camp.lifetime_budget) / 100;
+    var spent = camp._spend || 0;
+    var st = campStatusInfo(camp);
+    var sp = camp._periodSpend || 0;
+    var sales = (hasC && camp._conv) ? (camp._conv.sales || 0) : 0;
+    var fatNum = sales * 260, roasNum = sp > 0 ? fatNum / sp : 0, lucroNum = fatNum - sp;
+    var roasCls = roasNum >= 1.5 ? 'd-good' : (roasNum >= 1.3 ? 'd-warn' : (roasNum > 0 ? 'd-bad' : ''));
+    var lucroCls = lucroNum >= 0 ? 'd-good' : 'd-bad';
+    var cpaTxt = (sales > 0 && sp > 0) ? fmtUSD(sp / sales) : '---';
+    var esc = function(s){ return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    var row = function(k, v){ return '<div class="det-row"><span class="det-k">'+k+'</span><span class="det-v">'+v+'</span></div>'; };
+    var adsTxt = (camp._adsLoaded && camp._adTotal > 0) ? (camp._adActive + '/' + camp._adTotal + ' ativos') : '---';
+
+    document.getElementById('cboDetTitle').textContent = camp.name || 'Campanha';
+    document.getElementById('cboDetAcct').innerHTML = '<span class="badge '+st.cls+'">'+st.txt+'</span> &middot; '+esc(camp._accountName);
+
+    var body = ''
+      + row('Gasto (periodo)', sp > 0 ? fmtUSD(sp) : '---')
+      + row('Vendas', hasC ? sales : '<span style="color:#6e7681">sem token</span>')
+      + row('CPA', hasC ? cpaTxt : '---')
+      + row('ROAS', (hasC && roasNum > 0) ? '<span class="'+roasCls+'">'+roasNum.toFixed(2).replace('.',',')+'</span>' : '---')
+      + row('Faturamento', (hasC && fatNum > 0) ? '<span style="color:#3fb950">'+fmtUSD(fatNum)+'</span>' : '---')
+      + row('Lucro', (hasC && (fatNum > 0 || sp > 0)) ? '<span class="'+lucroCls+'">'+fmtUSD(lucroNum)+'</span>' : '---')
+      + row('Anuncios', adsTxt)
+      + row('Orc. vitalicio', fmtUSD(lb))
+      + row('Gasto total', fmtUSD(spent));
+
+    /* Sugestao de regra: reaproveita o HTML ja renderizado na celula da tabela. */
+    var sugCell = document.getElementById('sugcell_'+i);
+    if (sugCell && sugCell.innerHTML.trim()) {
+      body += '<div class="det-sug"><div style="color:#8b949e;font-size:11px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em">Sugestao</div>'+sugCell.innerHTML+'</div>';
+    }
+
+    /* Acoes: botoes proprios do card que chamam os MESMOS handlers da tabela.
+       Apos agir, fecham o card p/ o usuario ver o resultado na tabela. */
+    var isActive = (camp.status || '').toUpperCase() === 'ACTIVE';
+    body += '<div class="det-acts">'
+          + '<button class="tgl-btn '+(isActive?'tgl-on':'tgl-off')+'" id="detTgl">'+(isActive?'⏸ Pausar':'▶ Ativar')+'</button>'
+          + '<button class="save-btn" id="detApply">Aplicar data</button>'
+          + '</div>';
+    if (camp._sugEnd) {
+      body += '<button class="save-btn" id="detSug" style="width:100%;margin-top:10px;min-height:42px;justify-content:center">Aplicar regra sugerida</button>';
+    }
+
+    document.getElementById('cboDetBody').innerHTML = body;
+
+    var bTgl = document.getElementById('detTgl');
+    if (bTgl) bTgl.addEventListener('click', function(){ closeCboDetail(); toggleCampaign(i); });
+    var bApply = document.getElementById('detApply');
+    if (bApply) bApply.addEventListener('click', function(){ closeCboDetail(); saveCBODate(i); });
+    var bSug = document.getElementById('detSug');
+    if (bSug) bSug.addEventListener('click', function(){ closeCboDetail(); applyRuleSuggestion(i); });
+
+    m.classList.add('show');
   }
 
   function calcCBORow(i, source) {
@@ -2015,6 +2228,9 @@
   }
   var histDayClearEl = document.getElementById('histDayClear');
   if (histDayClearEl) histDayClearEl.addEventListener('click', function() { var d = document.getElementById('histDay'); if (d) d.value = ''; renderHist(); });
+  /* Filtro por estrutura/token do Meta */
+  var histTkSelEl = document.getElementById('histTkSel');
+  if (histTkSelEl) histTkSelEl.addEventListener('change', function() { histTk = this.value || 'all'; renderHist(); });
   /* Filtro de origem: Todas / Manual / Robo */
   ['histSrcAll','histSrcManual','histSrcRobo'].forEach(function(bid) {
     var b = document.getElementById(bid);
@@ -2051,6 +2267,14 @@
     closeModal(); load();
   });
   document.getElementById('settModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+  /* Item 4: fechar o card de detalhes (botao Fechar + clique no fundo). */
+  (function(){
+    var dm = document.getElementById('cboDetModal');
+    if (!dm) return;
+    dm.addEventListener('click', function(e) { if (e.target === this) closeCboDetail(); });
+    var dc = document.getElementById('cboDetClose');
+    if (dc) dc.addEventListener('click', closeCboDetail);
+  })();
 
   /* Dentro de iframe (memory-news.site/dash) o navegador pode NAO salvar os tokens
      (armazenamento de terceiros). Avisa e oferece o link direto (first-party). */
