@@ -155,6 +155,10 @@
       <span style="font-size:12px;color:#6e7681">Dia:</span>
       <input type="date" id="histDay" class="cbo-date" style="width:150px">
       <button class="pill" id="histDayClear">Todos os dias</button>
+      <span style="font-size:12px;color:#6e7681;margin-left:6px">Origem:</span>
+      <button class="pill on" id="histSrcAll" data-src="all">Todas</button>
+      <button class="pill" id="histSrcManual" data-src="manual">&#9995; Manual</button>
+      <button class="pill" id="histSrcRobo" data-src="robo">&#129302; Rob&#244;</button>
       <span style="flex:1"></span>
       <button class="btn" id="histClear" style="border-color:#f85149;color:#f85149">&#128465; Limpar hist&#243;rico</button>
     </div>
@@ -977,6 +981,75 @@
   function clearHist() {
     try { localStorage.removeItem(HIST_KEY); } catch(e) {}
   }
+  /* Filtro de origem do historico: 'all' | 'manual' | 'robo'. */
+  var histSrc = 'all';
+  /* Origem de uma entrada (entradas antigas sem 'source' contam como manual). */
+  function histSourceOf(e) { return (e && e.source === 'robo') ? 'robo' : 'manual'; }
+  /* Chave estavel p/ deduplicar entradas (evita duplicar a cada refresh do robo). */
+  function histKeyOf(e) { return histSourceOf(e) + '|' + (e.id||'') + '|' + (e.t||'') + '|' + (e.sig||''); }
+  /* Mescla entradas do robo no md_hist sem duplicar nem mexer nas manuais. */
+  function mergeRoboHist(robos) {
+    if (!robos || !robos.length) return false;
+    var a = getHist();
+    var seen = {}; a.forEach(function(e) { seen[histKeyOf(e)] = true; });
+    var added = 0;
+    robos.forEach(function(e) {
+      if (!e) return;
+      e.source = 'robo';
+      var k = histKeyOf(e);
+      if (seen[k]) return;
+      seen[k] = true; a.push(e); added++;
+    });
+    if (!added) return false;
+    if (a.length > HIST_CAP) a = a.slice(a.length - HIST_CAP);
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(a)); } catch(e) {}
+    return true;
+  }
+  /* Tenta achar o nome de uma campanha pelo id (p/ fallbacks que so trazem id). */
+  function campNameById(id) {
+    for (var i = 0; i < cboData.length; i++) { if (cboData[i] && String(cboData[i].id) === String(id)) return cboData[i].name; }
+    return null;
+  }
+  /* Busca o historico aplicado pelo ROBO no Worker. Primario: /history (lista RICA).
+     Fallbacks defensivos: /applied (so ultima por camp.) e / (lastRun, em DRY sao SUGESTOES). */
+  function fetchRoboHist() {
+    var u = getWkUrl();
+    if (!u) return;
+    /* 1) /history — formato rico e acumulado */
+    fetch(u + '/history').then(function(r) {
+      if (!r.ok) throw new Error('no /history');
+      return r.json();
+    }).then(function(arr) {
+      if (!Array.isArray(arr)) throw new Error('bad json');
+      var robos = arr.map(function(e) { e = e || {}; e.source = 'robo'; return e; });
+      if (mergeRoboHist(robos) && curTab === 'hist') renderHist();
+    }).catch(function() {
+      /* 2) fallback /applied — {id:{sig,action,t,day}} */
+      fetch(u + '/applied').then(function(r) {
+        if (!r.ok) throw new Error('no /applied');
+        return r.json();
+      }).then(function(map) {
+        if (!map || typeof map !== 'object') throw new Error('bad json');
+        var robos = Object.keys(map).map(function(id) {
+          var v = map[id] || {};
+          return { id: id, name: campNameById(id) || ('#'+id), t: v.t || Date.now(), day: v.day || '', sig: v.sig || '', action: v.action || '', source: 'robo' };
+        });
+        if (mergeRoboHist(robos) && curTab === 'hist') renderHist();
+      }).catch(function() {
+        /* 3) fallback / (lastRun) — em DRY sao SUGESTOES, nao aplicacoes. So como ultimo recurso. */
+        fetch(u + '/').then(function(r) { return r.json(); }).then(function(d) {
+          if (!d || !Array.isArray(d.actions)) return;
+          var t = d.at ? new Date(d.at).getTime() : Date.now();
+          var day = (d.diag && d.diag.today) || '';
+          var robos = d.actions.map(function(a) {
+            a = a || {};
+            return { id: a.id, name: a.name || ('#'+a.id), t: t, day: day, sig: (a.action||'').split('_')[0], action: a.action || '', roas: a.roas, sales: a.sales, spend: a.spend, dailyNew: (a.target!=null?Math.round(a.target):null), endNew: a.newEnd || null, source: 'robo' };
+          });
+          if (mergeRoboHist(robos) && curTab === 'hist') renderHist();
+        }).catch(function() {});
+      });
+    });
+  }
   /* Grava uma entrada de historico no momento da aplicacao da regra.
      "chg" = {dailyOld, dailyNew, endOld, endNew} (qualquer um pode faltar). */
   function logRuleHist(camp, sig, action, chg) {
@@ -997,7 +1070,8 @@
       dailyOld: (typeof chg.dailyOld === 'number') ? chg.dailyOld : null,
       dailyNew: (typeof chg.dailyNew === 'number') ? chg.dailyNew : null,
       endOld: chg.endOld || null,   /* yyyy-mm-dd */
-      endNew: chg.endNew || null    /* yyyy-mm-dd */
+      endNew: chg.endNew || null,   /* yyyy-mm-dd */
+      source: 'manual'              /* origem: aplicada pelo dashboard */
     });
   }
 
@@ -1009,6 +1083,11 @@
     return 'd-warn';
   }
   function histUSD(v) { return '$' + Math.round(v).toLocaleString('pt-BR'); }
+  /* Selo de origem da entrada (Robo x Manual), cores do tema. */
+  function histSrcBadge(e) {
+    if (histSourceOf(e) === 'robo') return '<span class="badge b-p" style="font-size:10px;padding:2px 7px">&#129302; Rob&#244;</span>';
+    return '<span class="badge b-bl" style="font-size:10px;padding:2px 7px">&#9995; Manual</span>';
+  }
   function histBR(d) { return d ? String(d).split('-').reverse().join('/') : ''; }
   /* Monta o texto "antes -> depois" de uma entrada (defensivo p/ entradas antigas). */
   function histChangeHtml(e) {
@@ -1042,8 +1121,9 @@
     var dayEl = document.getElementById('histDay');
     var q = srchEl ? srchEl.value.trim().toLowerCase() : '';
     var dayF = dayEl ? dayEl.value : '';
-    /* aplica filtros */
+    /* aplica filtros (origem + nome + dia) */
     var list = all.filter(function(e) {
+      if (histSrc !== 'all' && histSourceOf(e) !== histSrc) return false;
       if (dayF && e.day !== dayF) return false;
       if (q && String(e.name || '').toLowerCase().indexOf(q) < 0) return false;
       return true;
@@ -1053,7 +1133,12 @@
       return;
     }
     if (!list.length) {
-      body.innerHTML = '<div class="ld">Nenhuma aplica&#231;&#227;o bate com o filtro atual.</div>';
+      /* estado vazio especifico do filtro Robo */
+      if (histSrc === 'robo') {
+        body.innerHTML = '<div class="ld">Nenhuma regra aplicada pelo rob&#244; ainda. O rob&#244; s&#243; registra quando est&#225; em modo APPLY_MODE=live.</div>';
+      } else {
+        body.innerHTML = '<div class="ld">Nenhuma aplica&#231;&#227;o bate com o filtro atual.</div>';
+      }
       return;
     }
     /* agrupa por campanha (id) */
@@ -1087,6 +1172,7 @@
           + '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">'
           +   '<span style="color:#6e7681;font-size:11px;min-width:96px">'+when+'</span>'
           +   '<span class="'+cls+'" style="font-size:11px">'+(e.sig||'REGRA')+'</span>'
+          +   histSrcBadge(e)
           +   '<span style="color:#8b949e;font-size:11px">'+String(e.action||'').replace(/</g,'&lt;')+'</span>'
           + '</div>'
           + histChangeHtml(e)
@@ -1583,7 +1669,7 @@
       this.classList.add('on');
       curTab = this.dataset.tab;
       document.getElementById('tab-'+curTab).classList.add('show');
-      if (curTab === 'hist') renderHist();
+      if (curTab === 'hist') { renderHist(); fetchRoboHist(); }
     });
   });
   /* Controles do painel de Historico */
@@ -1593,6 +1679,17 @@
   if (histDayEl) histDayEl.addEventListener('change', renderHist);
   var histDayClearEl = document.getElementById('histDayClear');
   if (histDayClearEl) histDayClearEl.addEventListener('click', function() { var d = document.getElementById('histDay'); if (d) d.value = ''; renderHist(); });
+  /* Filtro de origem: Todas / Manual / Robo */
+  ['histSrcAll','histSrcManual','histSrcRobo'].forEach(function(bid) {
+    var b = document.getElementById(bid);
+    if (!b) return;
+    b.addEventListener('click', function() {
+      histSrc = this.dataset.src || 'all';
+      document.querySelectorAll('#histSrcAll,#histSrcManual,#histSrcRobo').forEach(function(x) { x.classList.remove('on'); });
+      this.classList.add('on');
+      renderHist();
+    });
+  });
   var histClearEl = document.getElementById('histClear');
   if (histClearEl) histClearEl.addEventListener('click', function() {
     if (!getHist().length) { alert('O historico ja esta vazio.'); return; }
