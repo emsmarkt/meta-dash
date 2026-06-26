@@ -64,6 +64,7 @@
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
         <button class="tab-btn" data-tab="cbo">&#128197; CBO Calculator</button>
+        <button class="tab-btn" data-tab="hist">&#128220; Hist&#243;rico</button>
       </div>
       <span class="ts" id="tsLbl"></span>
       <button class="btn" id="btnRefresh"><span id="spinIco" class="spin" style="display:none"></span>&#8635; Atualizar</button>
@@ -144,6 +145,20 @@
         <tbody id="cboTbody"><tr><td colspan="26" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
       </table>
     </div>
+  </div>
+  <div class="tab-pane" id="tab-hist">
+    <div class="cbo-info">
+      <strong>Hist&#243;rico de regras aplicadas</strong> &mdash; registro acumulado (neste dispositivo) de cada regra que voce aplicou nas campanhas: o que mudou, quando e o cenario do momento (ROAS / vendas / gasto). Clique numa campanha para expandir a linha do tempo.
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input class="srch" id="histSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
+      <span style="font-size:12px;color:#6e7681">Dia:</span>
+      <input type="date" id="histDay" class="cbo-date" style="width:150px">
+      <button class="pill" id="histDayClear">Todos os dias</button>
+      <span style="flex:1"></span>
+      <button class="btn" id="histClear" style="border-color:#f85149;color:#f85149">&#128465; Limpar hist&#243;rico</button>
+    </div>
+    <div id="histBody"></div>
   </div>
   <div class="foot-note">
     <span>Meta Graph API v21.0 &mdash; dados em tempo real</span>
@@ -946,18 +961,166 @@
   }
   function hhmm(t) { return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
 
+  /* ===== HISTORICO ACUMULADO DE REGRAS POR CAMPANHA (localStorage, por dispositivo) ===== */
+  var HIST_KEY = 'md_hist';   /* array de entradas */
+  var HIST_CAP = 500;         /* mantem so as ultimas N entradas */
+  function getHist() {
+    try { var s = localStorage.getItem(HIST_KEY); if (!s) return []; var a = JSON.parse(s); return Array.isArray(a) ? a : []; }
+    catch(e) { return []; }
+  }
+  function pushHist(entry) {
+    var a = getHist();
+    a.push(entry);
+    if (a.length > HIST_CAP) a = a.slice(a.length - HIST_CAP);
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(a)); } catch(e) {}
+  }
+  function clearHist() {
+    try { localStorage.removeItem(HIST_KEY); } catch(e) {}
+  }
+  /* Grava uma entrada de historico no momento da aplicacao da regra.
+     "chg" = {dailyOld, dailyNew, endOld, endNew} (qualquer um pode faltar). */
+  function logRuleHist(camp, sig, action, chg) {
+    var sales = (camp._conv ? camp._conv.sales : 0) || 0;
+    var spend = camp._periodSpend || 0;
+    var roas = spend > 0 ? (sales*260)/spend : 0;
+    chg = chg || {};
+    pushHist({
+      id: camp.id,
+      name: camp.name || ('#'+camp.id),
+      t: Date.now(),
+      day: brDatePlus(0),
+      sig: sig || '',
+      action: action || '',
+      roas: roas,
+      sales: sales,
+      spend: spend,
+      dailyOld: (typeof chg.dailyOld === 'number') ? chg.dailyOld : null,
+      dailyNew: (typeof chg.dailyNew === 'number') ? chg.dailyNew : null,
+      endOld: chg.endOld || null,   /* yyyy-mm-dd */
+      endNew: chg.endNew || null    /* yyyy-mm-dd */
+    });
+  }
+
+  /* Cor da regra conforme o tipo, no padrao do resto do painel. */
+  function histSigCls(sig) {
+    if (sig === 'ESCALAR' || sig === 'AUMENTAR' || sig === 'MANTER') return 'd-good';
+    if (sig === 'LIMITAR') return 'd-warn';
+    if (sig === 'CORTAR') return 'd-bad';
+    return 'd-warn';
+  }
+  function histUSD(v) { return '$' + Math.round(v).toLocaleString('pt-BR'); }
+  function histBR(d) { return d ? String(d).split('-').reverse().join('/') : ''; }
+  /* Monta o texto "antes -> depois" de uma entrada (defensivo p/ entradas antigas). */
+  function histChangeHtml(e) {
+    var parts = [];
+    if (typeof e.dailyNew === 'number' && e.dailyNew !== null) {
+      var oldD = (typeof e.dailyOld === 'number' && e.dailyOld > 0) ? histUSD(e.dailyOld) + ' &rarr; ' : '';
+      parts.push('di&#225;rio ' + oldD + histUSD(e.dailyNew));
+    }
+    if (e.endNew) {
+      var oldE = e.endOld ? histBR(e.endOld) + ' &rarr; ' : '';
+      parts.push('t&#233;rmino ' + oldE + histBR(e.endNew));
+    }
+    var snap = [];
+    if (typeof e.roas === 'number' && e.roas > 0) snap.push('ROAS ' + e.roas.toFixed(2).replace('.', ','));
+    if (typeof e.sales === 'number') snap.push(e.sales + ' vendas');
+    if (typeof e.spend === 'number' && e.spend > 0) snap.push(histUSD(e.spend) + ' gastos');
+    var out = '';
+    if (parts.length) out += '<div style="font-size:11px;color:#c9d1d9;margin-top:2px">' + parts.join(' &middot; ') + '</div>';
+    if (snap.length) out += '<div style="font-size:10px;color:#6e7681;margin-top:2px">' + snap.join(' &middot; ') + '</div>';
+    return out;
+  }
+  /* Estado de grupos expandidos no painel de historico. */
+  var histOpen = {};
+  function toggleHistGroup(id) { histOpen[id] = !histOpen[id]; renderHist(); }
+
+  function renderHist() {
+    var body = document.getElementById('histBody');
+    if (!body) return;
+    var all = getHist();
+    var srchEl = document.getElementById('histSrch');
+    var dayEl = document.getElementById('histDay');
+    var q = srchEl ? srchEl.value.trim().toLowerCase() : '';
+    var dayF = dayEl ? dayEl.value : '';
+    /* aplica filtros */
+    var list = all.filter(function(e) {
+      if (dayF && e.day !== dayF) return false;
+      if (q && String(e.name || '').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    if (!all.length) {
+      body.innerHTML = '<div class="ld">Nenhuma regra aplicada ainda. Quando voce clicar em "Aplicar regra" na aba CBO Calculator, o que mudou aparece aqui.</div>';
+      return;
+    }
+    if (!list.length) {
+      body.innerHTML = '<div class="ld">Nenhuma aplica&#231;&#227;o bate com o filtro atual.</div>';
+      return;
+    }
+    /* agrupa por campanha (id) */
+    var groups = {}; var order = [];
+    list.forEach(function(e) {
+      var k = e.id || e.name || '?';
+      if (!groups[k]) { groups[k] = { id: e.id, name: e.name || ('#'+e.id), items: [], last: 0 }; order.push(k); }
+      groups[k].items.push(e);
+      if (e.t > groups[k].last) groups[k].last = e.t;
+    });
+    /* grupos por aplicacao mais recente */
+    order.sort(function(a, b) { return groups[b].last - groups[a].last; });
+    var html = order.map(function(k) {
+      var g = groups[k];
+      var open = !!histOpen[k];
+      var nm = String(g.name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var head = '<div onclick="window.__mdToggleHist(\''+String(k).replace(/'/g,"\\'")+'\')" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:11px 14px;background:#161b22;border:1px solid #21262d;border-radius:8px;margin-bottom:'+(open?'0':'8px')+(open?';border-bottom-left-radius:0;border-bottom-right-radius:0':'')+'">'
+        + '<span style="color:#8b949e;font-size:12px;width:12px">'+(open?'&#9660;':'&#9654;')+'</span>'
+        + '<span style="font-weight:600;color:#f0f6fc;font-size:13px;overflow:hidden;text-overflow:ellipsis">'+nm+'</span>'
+        + '<span style="color:#6e7681;font-size:11px">'+(g.id||'')+'</span>'
+        + '<span style="flex:1"></span>'
+        + '<span style="background:#21262d;color:#8b949e;font-size:11px;padding:2px 9px;border-radius:20px">'+g.items.length+' aplica&#231;&#245;es</span>'
+        + '</div>';
+      if (!open) return head;
+      /* itens da campanha, mais recente no topo */
+      var items = g.items.slice().sort(function(a, b) { return b.t - a.t; });
+      var rows = items.map(function(e) {
+        var cls = histSigCls(e.sig);
+        var when = hhmm(e.t) + ' &middot; ' + histBR(e.day);
+        return '<div style="padding:9px 14px 9px 34px;border-bottom:1px solid #21262d">'
+          + '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">'
+          +   '<span style="color:#6e7681;font-size:11px;min-width:96px">'+when+'</span>'
+          +   '<span class="'+cls+'" style="font-size:11px">'+(e.sig||'REGRA')+'</span>'
+          +   '<span style="color:#8b949e;font-size:11px">'+String(e.action||'').replace(/</g,'&lt;')+'</span>'
+          + '</div>'
+          + histChangeHtml(e)
+          + '</div>';
+      }).join('');
+      return head + '<div style="background:#0d1117;border:1px solid #21262d;border-top:none;border-radius:0 0 8px 8px;margin-bottom:8px">'+rows+'</div>';
+    }).join('');
+    body.innerHTML = html;
+  }
+  window.__mdToggleHist = toggleHistGroup;
+
   function applyRuleSuggestion(i) {
     var camp = cboData[i];
     if (!camp || !camp._sugEnd) { alert('Sem sugestao aplicavel para esta campanha.'); return; }
     /* Marca como aplicada JA (otimista): assim a MESMA regra nao reaparece com botao,
        mesmo que a verificacao da data em CBO vitalicia nao bata exata. */
     if (camp._sugSig) setAppliedRule(camp.id, camp._sugSig, camp._sugAction);
+    /* Captura o ANTES->DEPOIS para o historico, antes de trocar a data no input. */
+    var di = document.getElementById('cnewdate_'+i);
+    var endOld = (camp.stop_time ? (typeof camp.stop_time === 'number' ? new Date(camp.stop_time*1000) : new Date(camp.stop_time)).toISOString().split('T')[0] : (di ? di.value : '')) || null;
+    var dailyOld = currentDailyOf(camp);
+    var dailyNew = (typeof camp._sugTarget === 'number') ? camp._sugTarget : null;
+    logRuleHist(camp, camp._sugSig, camp._sugAction, {
+      dailyOld: dailyOld > 0 ? dailyOld : null,
+      dailyNew: dailyNew,
+      endOld: endOld,
+      endNew: camp._sugEnd
+    });
     var sc = document.getElementById('sugcell_'+i);
     if (sc) sc.innerHTML = '<span class="d-good" style="font-size:11px;font-weight:600">'+(camp._sugAction||'Regra')+'</span>'
                         + '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; aplicada as '+hhmm(Date.now())+'</div>';
-    var di = document.getElementById('cnewdate_'+i);
     if (di) di.value = camp._sugEnd;
     saveCBODate(i);
+    if (curTab === 'hist') renderHist();
   }
 
   function renderCBO() {
@@ -1011,6 +1174,7 @@
           camp._sugEnd = rule.newEnd;
           camp._sugSig = rule.sig;
           camp._sugAction = rule.action;
+          camp._sugTarget = rule.target;
           var applied = getAppliedRule(camp.id);
           var sameApplied = applied && rule.sig && applied.sig === rule.sig;
           sugTxt = '<span class="'+rule.cls+'" style="font-size:11px;font-weight:600">'+rule.action+'</span>';
@@ -1419,7 +1583,20 @@
       this.classList.add('on');
       curTab = this.dataset.tab;
       document.getElementById('tab-'+curTab).classList.add('show');
+      if (curTab === 'hist') renderHist();
     });
+  });
+  /* Controles do painel de Historico */
+  var histSrchEl = document.getElementById('histSrch');
+  if (histSrchEl) histSrchEl.addEventListener('input', renderHist);
+  var histDayEl = document.getElementById('histDay');
+  if (histDayEl) histDayEl.addEventListener('change', renderHist);
+  var histDayClearEl = document.getElementById('histDayClear');
+  if (histDayClearEl) histDayClearEl.addEventListener('click', function() { var d = document.getElementById('histDay'); if (d) d.value = ''; renderHist(); });
+  var histClearEl = document.getElementById('histClear');
+  if (histClearEl) histClearEl.addEventListener('click', function() {
+    if (!getHist().length) { alert('O historico ja esta vazio.'); return; }
+    if (confirm('Apagar TODO o historico de regras aplicadas? Esta acao nao pode ser desfeita.')) { clearHist(); histOpen = {}; renderHist(); }
   });
   document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else load(); });
   document.getElementById('btnTokens').addEventListener('click', openModal);
