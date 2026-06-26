@@ -1099,8 +1099,8 @@
   function histUSD(v) { return '$' + Math.round(v).toLocaleString('pt-BR'); }
   /* Selo de origem da entrada (Robo x Manual), cores do tema. */
   function histSrcBadge(e) {
-    if (histSourceOf(e) === 'robo') return '<span class="badge b-p" style="font-size:10px;padding:2px 7px">&#129302; Rob&#244;</span>';
-    return '<span class="badge b-bl" style="font-size:10px;padding:2px 7px">&#9995; Manual</span>';
+    if (histSourceOf(e) === 'robo') return '<span class="badge b-p" style="font-size:14px;padding:2px 8px">&#129302; Rob&#244;</span>';
+    return '<span class="badge b-bl" style="font-size:14px;padding:2px 8px">&#9995; Manual</span>';
   }
   function histBR(d) { return d ? String(d).split('-').reverse().join('/') : ''; }
   /* Monta o texto "antes -> depois" de uma entrada (defensivo p/ entradas antigas). */
@@ -1119,8 +1119,8 @@
     if (typeof e.sales === 'number') snap.push(e.sales + ' vendas');
     if (typeof e.spend === 'number' && e.spend > 0) snap.push(histUSD(e.spend) + ' gastos');
     var out = '';
-    if (parts.length) out += '<div style="font-size:11px;color:#c9d1d9;margin-top:2px">' + parts.join(' &middot; ') + '</div>';
-    if (snap.length) out += '<div style="font-size:10px;color:#6e7681;margin-top:2px">' + snap.join(' &middot; ') + '</div>';
+    if (parts.length) out += '<div style="font-size:14px;color:#c9d1d9;margin-top:3px">' + parts.join(' &middot; ') + '</div>';
+    if (snap.length) out += '<div style="font-size:13px;color:#6e7681;margin-top:3px">' + snap.join(' &middot; ') + '</div>';
     return out;
   }
   /* Estado de grupos expandidos no painel de historico. */
@@ -1171,10 +1171,10 @@
       var nm = String(g.name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       var head = '<div onclick="window.__mdToggleHist(\''+String(k).replace(/'/g,"\\'")+'\')" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:11px 14px;background:#161b22;border:1px solid #21262d;border-radius:8px;margin-bottom:'+(open?'0':'8px')+(open?';border-bottom-left-radius:0;border-bottom-right-radius:0':'')+'">'
         + '<span style="color:#8b949e;font-size:12px;width:12px">'+(open?'&#9660;':'&#9654;')+'</span>'
-        + '<span style="font-weight:600;color:#f0f6fc;font-size:13px;overflow:hidden;text-overflow:ellipsis">'+nm+'</span>'
+        + '<span style="font-weight:700;color:#f0f6fc;font-size:16px;overflow:hidden;text-overflow:ellipsis">'+nm+'</span>'
         + '<span style="color:#6e7681;font-size:11px">'+(g.id||'')+'</span>'
         + '<span style="flex:1"></span>'
-        + '<span style="background:#21262d;color:#8b949e;font-size:11px;padding:2px 9px;border-radius:20px">'+g.items.length+' aplica&#231;&#245;es</span>'
+        + '<span style="background:#21262d;color:#8b949e;font-size:12px;padding:3px 10px;border-radius:20px">'+g.items.length+' aplica&#231;&#245;es</span>'
         + '</div>';
       if (!open) return head;
       /* itens da campanha, mais recente no topo */
@@ -1182,12 +1182,12 @@
       var rows = items.map(function(e) {
         var cls = histSigCls(e.sig);
         var when = hhmm(e.t) + ' &middot; ' + histBR(e.day);
-        return '<div style="padding:9px 14px 9px 34px;border-bottom:1px solid #21262d">'
+        return '<div style="padding:11px 14px 11px 34px;border-bottom:1px solid #21262d">'
           + '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">'
-          +   '<span style="color:#6e7681;font-size:11px;min-width:96px">'+when+'</span>'
-          +   '<span class="'+cls+'" style="font-size:11px">'+(e.sig||'REGRA')+'</span>'
+          +   '<span style="color:#6e7681;font-size:12px;min-width:104px">'+when+'</span>'
+          +   '<span class="'+cls+'" style="font-size:14px;font-weight:600">'+(e.sig||'REGRA')+'</span>'
           +   histSrcBadge(e)
-          +   '<span style="color:#8b949e;font-size:11px">'+String(e.action||'').replace(/</g,'&lt;')+'</span>'
+          +   '<span style="color:#8b949e;font-size:14px">'+String(e.action||'').replace(/</g,'&lt;')+'</span>'
           + '</div>'
           + histChangeHtml(e)
           + '</div>';
