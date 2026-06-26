@@ -197,17 +197,22 @@
     dayGood: 1.6,        // humor do dia: ROAS combinado >= isso = dia BOM
     dayOk: 1.2,          // entre dayOk e dayGood = NORMAL; abaixo = RUIM
     minSpendJudge: 100,  // so julga campanha apos esse gasto no dia (US$)
-    floorDaily: 85,      // piso de orcamento diario (US$) — valor do CORTAR
+    floorDaily: 85,      // piso (so usado como fallback)
+    cutDays: 364,        // CORTAR = empurra o termino p/ daqui X dias (limite do FB e 365)
     cpaTarget: 175,      // teto de CPA = META de ROAS (175 -> ROAS 1.5)
-    cpaRopeGood: 195,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+)
-    minRoas: 1.1,        // abaixo disso (perde dinheiro) -> CORTAR $85; entre 1.1 e a meta -> LIMITA (trava no gasto)
-    cutNoSaleSpend: 110, // gastou >= isso e 0 venda -> piso ($85)
+    cpaRopeGood: 190,    // teto de CPA extra em DIA BOM p/ quem ja vende (2+) -> ROAS ~1.37
+    /* ROAS de corte: abaixo disso -> CORTAR (+364 dias), independente do dia.
+       Entre minRoas (1.3) e a meta (1.5) -> LIMITA no gasto. >= 1.5 -> escala. */
+    minRoas: 1.3,
+    cutNoSaleSpend: 110, // gastou >= isso e 0 venda -> CORTA
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
     aumRoasLow: 1.5,     // ROAS bom: faixa de aumento proporcional (1.5 a 1.9)
     aumRoasHigh: 1.9,
     aumPctLow: 0.30,     // +30% no ROAS 1.5 ...
     aumPctHigh: 0.70,    // ... ate +70% no ROAS 1.9. Diario = vendas x cpaTarget x (1+%)
+    aumMaxSales: 5,      // a faixa 1.5-1.9 SO vale p/ campanhas com ATE 5 vendas. Mais de 5 vendas (ja tem volume) = MANTER, nunca reduz por essa regra
+
     scaleMult: 12,       // multiplicador de escala (agressivo: 12x o GASTO de hoje). Range util 10-15
     scaleUsePct: 0.2,    // SO escala/libera se gasto de hoje >= isso do diario atual
     releaseDaily: 500,   // campanha que vendeu mas esta com diario baixo -> libera p/ esse valor (acompanhar)
@@ -865,11 +870,16 @@
     var target = null, action = '', cls = 'd-warn', key = '';
     var roasFmt = roas.toFixed(2).replace('.', ',');                       /* ROAS de hoje */
     var metaRoasTxt = (260 / RULES.cpaTarget).toFixed(1).replace('.', ','); /* meta de ROAS (ex: 1,5) */
-    var minRoasTxt = RULES.minRoas.toFixed(1).replace('.', ',');           /* ROAS minimo (ex: 1,4) */
+    /* ROAS minimo aceitavel: <=2 vendas -> 1.3 sempre; 3+ vendas -> 1.3 (bom) / 1.4 (normal) / 1.5 (ruim).
+       Abaixo dele = CORTAR; entre ele e a meta (1.5) = LIMITAR. */
+    var cutFloor = RULES.minRoas; /* 1.3 fixo, independente do dia/vendas */
+    var minRoasTxt = cutFloor.toFixed(1).replace('.', ',');
+    /* CORTAR = empurra o termino p/ daqui cutDays (364). O diario vira saldo/364 (bem baixo). */
+    var cortarTarget = rem > 0 ? (rem / RULES.cutDays) : RULES.floorDaily;
 
     if (sales === 0) {
       /* SEM VENDA: gastou o suficiente -> corta p/ piso; senao "Coletando". */
-      if (sp >= RULES.cutNoSaleSpend) { target = RULES.floorDaily; action = 'CORTAR p/ $' + RULES.floorDaily + ' (sem venda, $' + Math.round(sp) + ' gastos)'; cls = 'd-bad'; key = 'CORTAR'; }
+      if (sp >= RULES.cutNoSaleSpend) { target = cortarTarget; action = 'CORTAR (termino +' + RULES.cutDays + 'd, sem venda, $' + Math.round(sp) + ' gastos)'; cls = 'd-bad'; key = 'CORTAR'; }
       else { action = 'Coletando (sem venda)'; key = 'COLETANDO'; }
     } else if (cpa <= ceiling) {
       /* VENCEDORA (vendeu e CPA abaixo do teto) — regras valem mesmo com gasto < $100. */
@@ -880,8 +890,14 @@
       if (excellent) {
         target = baseDaily * RULES.scaleMult;
         action = 'ESCALAR x' + RULES.scaleMult + ' p/ $' + Math.round(target) + (sp < 1 && sales > 0 ? ' (vende sem gasto hoje)' : ' (ROAS ' + roasFmt + ')'); cls = 'd-good'; key = 'ESCALAR';
+      } else if (sales > RULES.aumMaxSales) {
+        /* ROAS BOM (1.5-1.9) MAS com mais de 5 vendas: campanha ja tem volume/aprendizado.
+           NAO entra na regra de aumento proporcional (que poderia REDUZIR o orcamento de quem
+           foi escalado e caiu de ROAS 2 p/ 1.8). Mantem como esta — nunca reduz. */
+        target = null;
+        action = 'MANTER (ROAS ' + roasFmt + ', ' + sales + ' vendas > ' + RULES.aumMaxSales + ' — fora da regra 1,5–1,9)'; cls = 'd-good'; key = 'MANTER';
       } else {
-        /* ROAS BOM (1.5 a 1.9): aumento proporcional. % de 30% (1.5) a 70% (1.9).
+        /* ROAS BOM (1.5 a 1.9) com ATE 5 vendas: aumento proporcional. % de 30% (1.5) a 70% (1.9).
            Diario = vendas x CPA-limite x (1 + %). So aumenta se for acima do GASTO de hoje. */
         var pct = Math.max(RULES.aumPctLow, Math.min(RULES.aumPctHigh,
           RULES.aumPctLow + (roas - RULES.aumRoasLow) / (RULES.aumRoasHigh - RULES.aumRoasLow) * (RULES.aumPctHigh - RULES.aumPctLow)));
@@ -894,15 +910,15 @@
           action = 'MANTER (ROAS ' + roasFmt + ', ja com orcamento)'; cls = 'd-good'; key = 'MANTER';
         }
       }
-    } else if (roas >= RULES.minRoas) {
-      /* VENDEU, ROAS abaixo da meta mas ACIMA do minimo (>=1,4): NAO volta p/ $100.
-         Congela o diario no GASTO de hoje (ex: gastou $1k -> $1k; 3 vendas ROAS 1,4 -> ~$525). */
+    } else if (roas >= cutFloor) {
+      /* VENDEU, ROAS abaixo da meta (1,5) mas ACIMA do minimo aceitavel -> LIMITAR no GASTO de hoje
+         (trava, nao mata). Ex: 1 venda ROAS 1,4 -> ~$175. */
       target = Math.max(sp, RULES.floorDaily);
       action = 'LIMITAR no gasto (~$' + Math.round(target) + ', ROAS ' + roasFmt + ' >= ' + minRoasTxt + ')'; cls = 'd-warn'; key = 'LIMITAR';
     } else {
-      /* ROAS abaixo do minimo (' + minRoasTxt + ') = prejuizo real -> corta p/ piso $100. */
-      target = RULES.floorDaily;
-      action = 'CORTAR p/ $' + RULES.floorDaily + ' (ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
+      /* ROAS abaixo do minimo aceitavel = prejuizo -> CORTAR (empurra termino +364 dias). */
+      target = cortarTarget;
+      action = 'CORTAR (termino +' + RULES.cutDays + 'd, ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
     }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
