@@ -1973,14 +1973,24 @@
     if (dateInp) dateInp.value = endDate.toISOString().split('T')[0];
   }
 
-  function postForm(id, tk, params) {
+  function postForm(id, tk, params, _try) {
+    _try = _try || 0;
     var body = new URLSearchParams();
     Object.keys(params).forEach(function(k){ body.append(k, params[k]); });
     body.append('access_token', tk);
     return fetch(API+'/'+id, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: body.toString() })
       .then(function(r){ return r.json(); })
       .then(function(d){
-        if (d.error) throw new Error(d.error.message + (d.error.error_user_msg ? ' - '+d.error.error_user_msg : ''));
+        if (d.error) {
+          /* Erro transitorio do Meta ("An unexpected error... Please retry later", code 2,
+             is_transient) -> espera e tenta de novo (ate 2x, backoff 1,5s/3s). Edicao e idempotente. */
+          var msg = d.error.message || '';
+          var transient = d.error.is_transient || d.error.code === 2 || /unexpected error|please (?:retry|try again)|temporar/i.test(msg);
+          if (transient && _try < 2) {
+            return new Promise(function(res){ setTimeout(res, 1500 * (_try + 1)); }).then(function(){ return postForm(id, tk, params, _try + 1); });
+          }
+          throw new Error(msg + (d.error.error_user_msg ? ' - '+d.error.error_user_msg : ''));
+        }
         return d;
       });
   }
@@ -2055,8 +2065,9 @@
 
     /* 1) CAMPANHA: stop_time governa o RITMO diario em CBO vitalicio.
           Reenvia o mesmo lifetime_budget (nao reseta aprendizado). NAO engolimos o erro. */
+    /* So o stop_time muda o RITMO da CBO; NAO reenviamos lifetime_budget (redundante e
+       gatilho provavel de "unexpected error" do Meta ao editar o cronograma). */
     var campParams = { stop_time: String(endTs) };
-    if (camp.lifetime_budget) campParams.lifetime_budget = String(camp.lifetime_budget);
 
     /* Token efetivo: comeca pelo da campanha e, em erro, cai pros outros automaticamente.
        O primeiro que funcionar vira o token usado no resto da operacao. */
