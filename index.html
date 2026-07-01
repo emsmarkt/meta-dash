@@ -112,6 +112,7 @@
         <button class="tab-btn" data-tab="hist">&#128220; Hist&#243;rico</button>
       </div>
       <span class="ts" id="tsLbl"></span>
+      <span class="ts" id="fxLbl" title="Cotacao USD/BRL ao vivo (AwesomeAPI)" style="color:#3fb950;font-weight:600"></span>
       <button class="btn" id="btnRefresh"><span id="spinIco" class="spin" style="display:none"></span>&#8635; Atualizar</button>
       <button class="btn" id="btnTokens">&#9881; Tokens</button>
     </div>
@@ -227,8 +228,9 @@
       <p style="margin-bottom:6px;font-size:11px;color:#6e7681">No RedTrack, em Conversion Types, cada tipo tem um numero. Informe o numero do tipo de VENDA (Purchase) e do InitiateCheckout. Deixe vazio para somar todas as conversoes.</p>
       <div class="tk-row"><input class="tk-inp" id="rtPInp" type="number" min="1" max="40" placeholder="No do tipo Purchase (ex: 1)"></div>
       <div class="tk-row"><input class="tk-inp" id="rtICInp" type="number" min="1" max="40" placeholder="No do tipo InitiateCheckout (ex: 2)"></div>
-      <p style="margin-bottom:6px;font-size:11px;color:#6e7681">Cambio R$/US$ p/ converter o custo do RedTrack (que vem em reais) em dolar. Ex: 5.1</p>
+      <p style="margin-bottom:6px;font-size:11px;color:#6e7681">Cambio R$/US$ p/ converter o custo do RedTrack (que vem em reais) em dolar. <b>Puxado automatico</b> (AwesomeAPI) a cada carregamento &mdash; edite so p/ sobrescrever manualmente (volta ao vivo no proximo refresh).</p>
       <div class="tk-row"><input class="tk-inp" id="fxInp" type="number" step="0.01" min="1" placeholder="Cambio R$/US$ (ex: 5.1)"></div>
+      <div id="fxLive" style="font-size:11px;color:#3fb950;margin-top:4px"></div>
       <h3>&#128200; Utmify (fallback)</h3>
       <p style="margin-bottom:8px">Usado apenas se o RedTrack nao estiver configurado.</p>
       <div class="tk-row"><input class="tk-inp" id="utmTkInp" type="password" placeholder="Token API Utmify"></div>
@@ -340,6 +342,26 @@
   /* Cambio R$->US$ p/ converter o custo do RedTrack (que vem em reais). */
   function getFx() { try { var v = parseFloat(localStorage.getItem('md_fx')); return (v && v > 0) ? v : 5.1; } catch(e) { return 5.1; } }
   function saveFx(v) { try { v = parseFloat(v); if (v && v > 0) localStorage.setItem('md_fx', String(v)); } catch(e) {} }
+  /* Cotacao USD/BRL ao vivo (AwesomeAPI: sem chave, CORS liberado). Atualiza md_fx sozinho.
+     Se a chamada falhar, mantem o ultimo valor salvo (manual/default) — nao quebra nada. */
+  function updateFxUI(rate, ts) {
+    var t = new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    var fxi = document.getElementById('fxInp'); if (fxi) fxi.value = rate.toFixed(4);
+    var lv = document.getElementById('fxLive'); if (lv) lv.textContent = 'ao vivo: R$ ' + rate.toFixed(4).replace('.', ',') + ' — atualizado ' + t + ' (AwesomeAPI)';
+    var hl = document.getElementById('fxLbl'); if (hl) hl.textContent = 'USD R$ ' + rate.toFixed(2).replace('.', ',');
+  }
+  function fetchFxLive() {
+    return fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL')
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var q = d && d.USDBRL; var rate = q ? parseFloat(q.bid) : NaN;
+        if (rate && rate > 0) {
+          try { localStorage.setItem('md_fx', String(rate)); localStorage.setItem('md_fx_ts', String(Date.now())); } catch(e){}
+          updateFxUI(rate, Date.now());
+        }
+      })
+      .catch(function(){ /* mantem o md_fx atual */ });
+  }
   var appliedShared = {}; /* mapa {campId:{sig,action,t,day}} vindo do Worker (compartilhado) */
   function fetchAppliedShared() {
     var u = getWkUrl();
@@ -934,7 +956,7 @@
     if (spinEl) spinEl.style.display = 'inline-block';
     document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando contas ativas...</td></tr>';
     var map = {};
-    var chain = Promise.resolve();
+    var chain = fetchFxLive().catch(function(){}); /* puxa a cotacao USD/BRL ao vivo ANTES de converter os custos */
     tks.forEach(function(tk) {
       chain = chain.then(function() {
         /* fjPaged segue a paginacao — antes pegava so a 1a pagina e faltavam contas. */
@@ -2316,6 +2338,7 @@
     if (mdb) mdb.insertBefore(tip, mdb.firstChild);
   })();
 
+  fetchFxLive();
   load();
   if (timer) clearInterval(timer);
   timer = setInterval(function() { if (curTab === 'contas') load(); }, 5*60*1000);
