@@ -308,6 +308,7 @@
   /* IMPORTANTE: toda a regra usa SOMENTE o acumulado de HOJE (00h-23h59 fuso BR).
      Cada dia e um dia — nunca puxa historico de dias anteriores. */
   var cboSort = { key: 'sales', dir: 'desc' };
+  var spendPeriod = 'this_month'; /* periodo do card "Gasto" na aba Contas: this_month | last_month | custom */
   var rtDiag = '';
   var timer = null;
 
@@ -531,7 +532,7 @@
   }
 
   function renderShell() {
-    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#3fb950" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#f85149" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#d2a20a" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto mes atual</div><div class="mc-v" id="mSpend">---</div><div class="mc-s">this_month</div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span class="pill" data-f="cbopaused">&#9888; CBO parada <b id="cCboP"></b></span><span style="width:1px;height:20px;background:#30363d;margin:0 4px"></span><span style="font-size:12px;color:#6e7681;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
+    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#3fb950" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#f85149" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#d2a20a" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto <select id="spendPerSel" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;font-size:11px;padding:1px 4px;cursor:pointer"><option value="this_month">m&ecirc;s atual</option><option value="last_month">m&ecirc;s passado</option><option value="custom">personalizado</option></select></div><div class="mc-v" id="mSpend">---</div><div class="mc-s" id="mSpendSub">este m&ecirc;s &middot; todas as contas</div><div id="spendCustomBox" style="display:none;margin-top:6px"><input type="date" id="spendCustomFrom" class="cbo-date" style="width:118px;font-size:11px;cursor:pointer">&nbsp;<input type="date" id="spendCustomTo" class="cbo-date" style="width:118px;font-size:11px;cursor:pointer"> <button class="btn" id="spendCustomApply" style="font-size:11px;padding:2px 8px">Aplicar</button></div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span class="pill" data-f="cbopaused">&#9888; CBO parada <b id="cCboP"></b></span><span style="width:1px;height:20px;background:#30363d;margin:0 4px"></span><span style="font-size:12px;color:#6e7681;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
     document.getElementById('mainContent').addEventListener('click', function(e) {
       var pill = e.target.closest ? e.target.closest('.pill') : null;
       if (!pill) return;
@@ -546,6 +547,25 @@
       }
     });
     document.getElementById('mainContent').addEventListener('input', function(e) { if (e.target && e.target.id === 'srch') renderTable(); });
+    /* Seletor de periodo do card "Gasto" (este mes / mes passado / personalizado). */
+    document.getElementById('mainContent').addEventListener('change', function(e) {
+      if (e.target && e.target.id === 'spendPerSel') {
+        spendPeriod = e.target.value;
+        var box = document.getElementById('spendCustomBox');
+        if (box) box.style.display = (spendPeriod === 'custom') ? 'block' : 'none';
+        if (spendPeriod !== 'custom' && allData) renderMetrics(allData);
+      }
+    });
+    document.getElementById('mainContent').addEventListener('click', function(e) {
+      if (e.target && e.target.id === 'spendCustomApply') {
+        var f = document.getElementById('spendCustomFrom'), t = document.getElementById('spendCustomTo');
+        if (!f || !t || !f.value || !t.value) { alert('Escolha as duas datas.'); return; }
+        fetchCustomSpend(f.value, t.value);
+      }
+    });
+    /* Restaura a selecao atual (renderShell reconstroi o HTML a cada load). */
+    var _sps = document.getElementById('spendPerSel'); if (_sps) _sps.value = spendPeriod;
+    var _box = document.getElementById('spendCustomBox'); if (_box) _box.style.display = (spendPeriod === 'custom') ? 'block' : 'none';
   }
 
   function load() {
@@ -616,13 +636,35 @@
     setSpin(false);
   }
 
+  /* Busca o gasto de um periodo PERSONALIZADO (time_range) em TODAS as contas e soma no card. */
+  function fetchCustomSpend(since, until) {
+    if (!allData || !allData.length) return;
+    var tr = 'time_range=' + encodeURIComponent(JSON.stringify({ since: since, until: until }));
+    var el = document.getElementById('mSpend'); if (el) el.textContent = '...';
+    var accts = allData.slice(), idx = 0;
+    function nextB() {
+      if (idx >= accts.length) { renderMetrics(allData); return; }
+      var batch = accts.slice(idx, idx + 6); idx += 6;
+      return Promise.all(batch.map(function(acc) {
+        return fj(API + '/' + acc.id + '/insights?fields=spend&' + tr + '&level=account&access_token=' + acc._tk)
+          .then(function(r){ acc._sCustom = spendVal(r); })
+          .catch(function(){ acc._sCustom = 0; });
+      })).then(nextB);
+    }
+    nextB();
+  }
   function renderMetrics(acc) {
     document.getElementById('mTotal').textContent = acc.length;
     document.getElementById('mAtivas').textContent = acc.filter(function(a){return a.account_status===1;}).length;
     document.getElementById('mProb').textContent = acc.filter(function(a){return a.account_status===2||a.account_status===3;}).length;
     document.getElementById('mSemCard').textContent = acc.filter(function(a){return !a._card;}).length;
-    var tot = acc.reduce(function(s,a){return s+parseFloat(a._sMon||0);},0);
-    document.getElementById('mSpend').textContent = tot > 0 ? fmtUSD(tot) : '---';
+    var tot;
+    if (spendPeriod === 'last_month') tot = acc.reduce(function(s,a){return s+parseFloat(a._sLmon||0);},0);
+    else if (spendPeriod === 'custom') tot = acc.reduce(function(s,a){return s+parseFloat(a._sCustom||0);},0);
+    else tot = acc.reduce(function(s,a){return s+parseFloat(a._sMon||0);},0);
+    document.getElementById('mSpend').textContent = tot > 0 ? fmtUSD(tot) : (spendPeriod === 'custom' ? 'escolha as datas' : '---');
+    var _sub = document.getElementById('mSpendSub');
+    if (_sub) _sub.textContent = (spendPeriod === 'last_month' ? 'mês passado' : (spendPeriod === 'custom' ? 'personalizado' : 'este mês')) + ' · todas as contas';
     var ct = {none:0,engonly:0,both:0,noeng:0,warn:0,cbopaused:0};
     acc.forEach(function(a){ ct[a._cat]=(ct[a._cat]||0)+1; if(a.account_status===3)ct.warn++; if(a._cboState==='paused')ct.cbopaused++; });
     document.getElementById('cAll').textContent = '('+acc.length+')';
