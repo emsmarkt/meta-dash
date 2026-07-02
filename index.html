@@ -110,6 +110,7 @@
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
         <button class="tab-btn" data-tab="cbo">&#128197; CBO Calculator</button>
+        <button class="tab-btn" data-tab="abo">&#128202; ABO</button>
         <button class="tab-btn" data-tab="hist">&#128220; Hist&#243;rico</button>
       </div>
       <span class="ts" id="tsLbl"></span>
@@ -149,6 +150,7 @@
         <button class="pill" data-cbostatus="active">Ativas</button>
         <button class="pill" data-cbostatus="paused">Pausadas</button>
         <button class="pill" data-cbostatus="error">Erro</button>
+        <button class="pill" data-cbostatus="teste">TESTE</button>
       </div>
       <input class="srch" id="cboSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
       <button class="btn" id="btnLoadCBO"><span id="spinCBO" class="spin" style="display:none"></span>&#8635; Carregar campanhas CBO</button>
@@ -190,6 +192,41 @@
           </tr>
         </thead>
         <tbody id="cboTbody"><tr><td colspan="26" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="tab-pane" id="tab-abo">
+    <div class="cbo-info">
+      <strong>ABO</strong> &mdash; campanhas com or&ccedil;amento no <strong>conjunto</strong> (ad set), n&atilde;o na campanha. Vis&atilde;o somente leitura: gasto (Meta), vendas (RedTrack por sub3), CPA e ROAS. O or&ccedil;amento mostrado &eacute; a soma do di&aacute;rio dos conjuntos ativos.
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div class="period-bar">
+        <span style="font-size:12px;color:#6e7681;margin-right:2px">Periodo:</span>
+        <button class="pill on" data-aboperiod="today">Hoje</button>
+        <button class="pill" data-aboperiod="yesterday">Ontem</button>
+        <button class="pill" data-aboperiod="last_7d">7 dias</button>
+        <button class="pill" data-aboperiod="last_30d">30 dias</button>
+      </div>
+      <input class="srch" id="aboSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
+      <button class="btn" id="btnLoadABO"><span id="spinABO" class="spin" style="display:none"></span>&#8635; Carregar campanhas ABO</button>
+    </div>
+    <div class="metrics" id="aboMetrics"></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Campanha</th>
+            <th>Conta</th>
+            <th>Status</th>
+            <th title="Conjuntos ativos / total">Conjuntos</th>
+            <th title="Soma do orcamento diario dos conjuntos ativos">Or&ccedil;. di&aacute;rio</th>
+            <th>Gasto</th>
+            <th>Vendas</th>
+            <th>CPA</th>
+            <th>ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="aboTbody"><tr><td colspan="9" class="ld">Clique em "Carregar campanhas ABO" para iniciar.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -270,6 +307,9 @@
   var cboPeriod = 'last_7d';
   var cboCustomFrom = '', cboCustomTo = '';
   var cboStatus = 'all';
+  var aboData = [];
+  var aboPeriod = 'today';
+  var aboLoading = false;
 
   /* ===== CONFIG DAS REGRAS (ajuste aqui = muda em todo lugar) =====
      Mesmo motor usado no dashboard (Sugestao + botao Aplicar) e no Cloudflare Worker. */
@@ -1037,7 +1077,9 @@
             list.filter(function(c) {
               var es = (c.effective_status || c.status || '').toUpperCase();
               if (es === 'DELETED' || es === 'ARCHIVED') return false; /* nao mostrar excluidas/arquivadas */
-              return c.name && c.name.toUpperCase().indexOf('CBO') >= 0 && c.name.toUpperCase().indexOf('SUBSTITUIDA') < 0 && c.lifetime_budget;
+              var nu = (c.name || '').toUpperCase();
+              /* Inclui CBO + TESTE (p/ os filtros da aba). ABO tem aba propria. Exige orcamento no nivel da campanha. */
+              return !!c.name && (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0) && nu.indexOf('SUBSTITUIDA') < 0 && !!c.lifetime_budget;
             }).forEach(function(c) {
               c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; camps.push(c);
             });
@@ -1138,6 +1180,221 @@
       })).then(nextBatch);
     }
     return nextBatch();
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     ABO — campanhas com orcamento no CONJUNTO (ad set), nao na campanha.
+     Read-only: gasto (Meta v1), vendas (RedTrack por sub3), CPA e ROAS.
+     TODO: futuramente trocar o spend do Meta pelo custo do RedTrack (em R$/fx),
+     como ja e feito na aba CBO (fetchCBOSpend). Por ora fica o spend do Meta (USD).
+     ══════════════════════════════════════════════════════════════════ */
+
+  /* Janela de periodo p/ a aba ABO (independente do cboPeriod). */
+  function aboPeriodDates() {
+    var now = new Date(Date.now() - 3 * 3600 * 1000); /* fuso BR (UTC-3) */
+    var fmt = function(d) { return d.getUTCFullYear() + '-' + ('0'+(d.getUTCMonth()+1)).slice(-2) + '-' + ('0'+d.getUTCDate()).slice(-2); };
+    if (aboPeriod === 'today') { var t = fmt(now); return {since:t, until:t}; }
+    if (aboPeriod === 'yesterday') { var y = new Date(now); y.setUTCDate(y.getUTCDate()-1); var ys = fmt(y); return {since:ys,until:ys}; }
+    if (aboPeriod === 'last_7d') { var s7 = new Date(now); s7.setUTCDate(s7.getUTCDate()-7); return {since:fmt(s7),until:fmt(now)}; }
+    if (aboPeriod === 'last_30d') { var s30 = new Date(now); s30.setUTCDate(s30.getUTCDate()-30); return {since:fmt(s30),until:fmt(now)}; }
+    var d = fmt(now); return {since:d, until:d};
+  }
+  function aboPeriodLabel() {
+    var m = {today:'Hoje', yesterday:'Ontem', last_7d:'7 dias', last_30d:'30 dias'};
+    return m[aboPeriod] || aboPeriod;
+  }
+
+  function loadABO() {
+    if (aboLoading) return;
+    var tks = getTks();
+    if (!tks.length) { alert('Configure um token primeiro em Tokens.'); return; }
+    aboLoading = true;
+    var spinEl = document.getElementById('spinABO');
+    if (spinEl) spinEl.style.display = 'inline-block';
+    document.getElementById('aboTbody').innerHTML = '<tr><td colspan="9" class="ld"><span class="spin"></span>Buscando contas ativas...</td></tr>';
+    var map = {};
+    /* Coleta de contas: mesmo padrao do loadCBO (por token, dedupe por id, guarda _tk). */
+    var chain = Promise.resolve();
+    tks.forEach(function(tk) {
+      chain = chain.then(function() {
+        return fjPaged(API+'/me/adaccounts?fields=name,account_status&limit=100&access_token='+tk).then(function(list) {
+          list.forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
+        }).catch(function(e) { console.warn(e); });
+      });
+    });
+    chain.then(function() {
+      var accounts = Object.values(map);
+      if (!accounts.length) { document.getElementById('aboTbody').innerHTML = '<tr><td colspan="9" class="ld" style="color:#f85149">Nenhuma conta encontrada.</td></tr>'; aboLoading = false; if (spinEl) spinEl.style.display='none'; return; }
+      document.getElementById('aboTbody').innerHTML = '<tr><td colspan="9" class="ld"><span class="spin"></span>Buscando campanhas ABO em '+accounts.length+' contas...</td></tr>';
+      var camps = [];
+      var idx = 0;
+      function nextBatch() {
+        if (idx >= accounts.length) {
+          /* Mantem ABO de contas ativas (status 1) OU campanhas efetivamente ACTIVE. */
+          var keepAcct = {};
+          camps.forEach(function(c){
+            if (c._acctStatus === 1) keepAcct[c._acctId] = true;
+            else if (((c.effective_status||c.status||'').toUpperCase())==='ACTIVE') keepAcct[c._acctId] = true;
+          });
+          var filtered = camps.filter(function(c){ return keepAcct[c._acctId]; });
+          return fetchABOData(filtered.length ? filtered : camps);
+        }
+        var batch = accounts.slice(idx, idx+6); idx += 6;
+        return Promise.all(batch.map(function(acc) {
+          var an = (acc.name || '').toLowerCase();
+          if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0) return null;
+          /* ABO: NAO exige lifetime_budget (o budget esta no conjunto). */
+          return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
+            list.filter(function(c) {
+              var es = (c.effective_status || c.status || '').toUpperCase();
+              if (es === 'DELETED' || es === 'ARCHIVED') return false;
+              var nu = (c.name || '').toUpperCase();
+              return !!c.name && nu.indexOf('ABO') >= 0 && nu.indexOf('SUBSTITUIDA') < 0;
+            }).forEach(function(c) {
+              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; camps.push(c);
+            });
+          }).catch(function(){});
+        })).then(nextBatch);
+      }
+      return nextBatch();
+    }).catch(function(e) {
+      document.getElementById('aboTbody').innerHTML = '<tr><td colspan="9" class="ld" style="color:#f85149">Erro: '+(e&&e.message?e.message:'desconhecido')+'</td></tr>';
+      aboLoading = false;
+      if (spinEl) spinEl.style.display='none';
+    });
+  }
+
+  function fetchABOData(camps) {
+    var spinEl = document.getElementById('spinABO');
+    if (!camps.length) {
+      document.getElementById('aboTbody').innerHTML = '<tr><td colspan="9" class="ld">Nenhuma campanha ABO encontrada.</td></tr>';
+      var mEl = document.getElementById('aboMetrics'); if (mEl) mEl.innerHTML = '';
+      aboLoading = false;
+      if (spinEl) spinEl.style.display='none';
+      return Promise.resolve();
+    }
+    var _pd = aboPeriodDates();
+    var periodParam = 'time_range=' + encodeURIComponent(JSON.stringify({ since: _pd.since, until: _pd.until }));
+    document.getElementById('aboTbody').innerHTML = '<tr><td colspan="9" class="ld"><span class="spin"></span>Carregando metricas de '+camps.length+' campanhas ABO ('+aboPeriodLabel()+')...</td></tr>';
+    var idx = 0;
+    function nextBatch() {
+      if (idx >= camps.length) {
+        /* Vendas do RedTrack por sub3=campaign_id. fetchConversions usa periodDates()
+           (global cboPeriod); setamos cboPeriod temporariamente = aboPeriod e restauramos. */
+        var savedPeriod = cboPeriod;
+        cboPeriod = aboPeriod;
+        return fetchConversions(camps).catch(function(){}).then(function() {
+          cboPeriod = savedPeriod;
+          /* GASTO: por ora fica o spend do Meta (USD). TODO: trocar p/ custo RedTrack como no CBO. */
+          camps.forEach(function(c) { c._spendSrc = 'meta'; });
+          aboData = camps;
+          renderABO();
+          aboLoading = false;
+          if (spinEl) spinEl.style.display='none';
+        }).catch(function(){
+          cboPeriod = savedPeriod;
+          aboData = camps; renderABO();
+          aboLoading = false;
+          if (spinEl) spinEl.style.display='none';
+        });
+      }
+      var batch = camps.slice(idx, idx+6); idx += 6;
+      return Promise.all(batch.map(function(c) {
+        /* Conjuntos (ad sets): onde esta o orcamento. */
+        var setsUrl = API+'/'+c.id+'/adsets?fields=name,status,effective_status,daily_budget,lifetime_budget,end_time&limit=200&access_token='+c._tk;
+        /* Gasto do periodo (nivel campanha). */
+        var insUrl = API+'/'+c.id+'/insights?fields=spend&'+periodParam+'&level=campaign&access_token='+c._tk;
+        return Promise.all([fjPaged(setsUrl), fj(insUrl)]).then(function(res) {
+          var sets = res[0] || [];
+          var active = sets.filter(function(s){ return (s.effective_status||s.status||'').toUpperCase()==='ACTIVE'; });
+          var dailySum = 0, hasLifetimeSet = false;
+          active.forEach(function(s){
+            if (s.daily_budget && parseFloat(s.daily_budget) > 0) dailySum += parseFloat(s.daily_budget) / 100; /* centavos -> USD */
+            else if (s.lifetime_budget && parseFloat(s.lifetime_budget) > 0) hasLifetimeSet = true;
+          });
+          c._absets = sets.length;
+          c._abActive = active.length;
+          c._abDaily = dailySum;
+          c._abHasLifetime = hasLifetimeSet;
+          c._spend = spendVal(res[1]);
+          c._periodSpend = c._spend;
+        }).catch(function(){ c._absets=0; c._abActive=0; c._abDaily=0; c._abHasLifetime=false; c._spend=0; c._periodSpend=0; });
+      })).then(nextBatch);
+    }
+    return nextBatch();
+  }
+
+  function renderABO() {
+    var tbody = document.getElementById('aboTbody');
+    var mEl = document.getElementById('aboMetrics');
+    if (!aboData.length) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="ld">Nenhuma campanha ABO encontrada.</td></tr>';
+      if (mEl) mEl.innerHTML = '';
+      return;
+    }
+    var hasC = hasConv();
+    var totSpend = 0, totSales = 0, totDaily = 0;
+    /* Ordena por ROAS desc (quem vende melhor no topo). */
+    var arr = aboData.slice().sort(function(a, b){
+      var sa = a._periodSpend||0, sb = b._periodSpend||0;
+      var va = (hasC && a._conv) ? (a._conv.sales||0) : 0;
+      var vb = (hasC && b._conv) ? (b._conv.sales||0) : 0;
+      var ra = sa > 0 ? (va*260)/sa : -1;
+      var rb = sb > 0 ? (vb*260)/sb : -1;
+      return rb - ra;
+    });
+    var rowsHtml = arr.map(function(camp) {
+      var st = campStatusInfo(camp);
+      var stBadge = '<span class="badge '+st.cls+'"'+(st.issue?(' title="'+st.issue.replace(/"/g,'&quot;')+'"'):'')+'>'+st.txt+(st.issue?' &#9888;':'')+'</span>';
+      var name = (camp.name||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var acctName = (camp._accountName||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      var sp = camp._periodSpend || 0;
+      var sales = (hasC && camp._conv) ? (camp._conv.sales||0) : 0;
+      var fatNum = sales * 260;
+      var roasNum = sp > 0 ? fatNum/sp : 0;
+      var cpaNum = sales > 0 ? sp/sales : 0;
+      totSpend += sp; totSales += sales; totDaily += (camp._abDaily||0);
+      var setsTxt = (camp._abActive||0) + '/' + (camp._absets||0);
+      var dailyTxt = (camp._abDaily > 0) ? fmtUSD(camp._abDaily) : (camp._abHasLifetime ? '&mdash; (vital.)' : '---');
+      if (camp._abHasLifetime && camp._abDaily > 0) dailyTxt = fmtUSD(camp._abDaily) + '<span title="ha conjunto com orcamento vitalicio nao somado" style="color:#d2a20a"> &#9888;</span>';
+      var spendTxt = sp > 0 ? fmtUSD(sp) : '---';
+      var salesTxt = hasC ? (sales > 0 ? sales.toLocaleString('pt-BR') : '0') : '---';
+      var cpaTxt = cpaNum > 0 ? fmtUSD(cpaNum) : '---';
+      var roasCls = roasNum >= 1.5 ? 'd-good' : (roasNum >= 1.3 ? 'd-warn' : (roasNum > 0 ? 'd-bad' : ''));
+      var roasTxt = roasNum > 0 ? roasNum.toFixed(2).replace('.',',') : '---';
+      var isErr = st.isError ? '1' : '0';
+      return '<tr data-name="'+name.toLowerCase().replace(/"/g,'')+'" data-status="'+st.group+'" data-error="'+isErr+'">'
+           + '<td style="text-align:left">'+name+'</td>'
+           + '<td style="text-align:left">'+acctName+'</td>'
+           + '<td>'+stBadge+'</td>'
+           + '<td>'+setsTxt+'</td>'
+           + '<td>'+dailyTxt+'</td>'
+           + '<td>'+spendTxt+'</td>'
+           + '<td>'+salesTxt+'</td>'
+           + '<td>'+cpaTxt+'</td>'
+           + '<td class="'+roasCls+'">'+roasTxt+'</td>'
+           + '</tr>';
+    }).join('');
+    if (tbody) tbody.innerHTML = rowsHtml;
+    var geralRoas = totSpend > 0 ? (totSales*260)/totSpend : 0;
+    var geralCls = geralRoas >= 1.5 ? '#3fb950' : (geralRoas >= 1.3 ? '#d2a20a' : (geralRoas > 0 ? '#f85149' : '#c9d1d9'));
+    if (mEl) {
+      mEl.innerHTML = '<div class="mc"><div class="mc-l">Campanhas ABO</div><div class="mc-v">'+aboData.length+'</div><div class="mc-s">'+aboPeriodLabel()+'</div></div>'
+        + '<div class="mc"><div class="mc-l">Or&ccedil;. di&aacute;rio (soma)</div><div class="mc-v">'+(totDaily>0?fmtUSD(totDaily):'---')+'</div><div class="mc-s">conjuntos ativos</div></div>'
+        + '<div class="mc"><div class="mc-l">Gasto</div><div class="mc-v">'+(totSpend>0?fmtUSD(totSpend):'---')+'</div><div class="mc-s">Meta &middot; USD</div></div>'
+        + '<div class="mc"><div class="mc-l">Vendas</div><div class="mc-v">'+(hasC?totSales.toLocaleString('pt-BR'):'---')+'</div><div class="mc-s">RedTrack</div></div>'
+        + '<div class="mc"><div class="mc-l">ROAS geral</div><div class="mc-v" style="color:'+geralCls+'">'+(geralRoas>0?geralRoas.toFixed(2).replace('.',','):'---')+'</div><div class="mc-s">faturamento / gasto</div></div>';
+    }
+    applyAboFilters();
+  }
+
+  function applyAboFilters() {
+    var srchEl = document.getElementById('aboSrch');
+    var q = srchEl ? srchEl.value.toLowerCase().trim() : '';
+    document.querySelectorAll('#aboTbody tr[data-name]').forEach(function(tr) {
+      var nm = tr.getAttribute('data-name') || '';
+      tr.style.display = (!q || nm.indexOf(q) >= 0) ? '' : 'none';
+    });
   }
 
   /* Sugestao de orcamento diario com base no ROAS (faturamento = vendas x $260). */
@@ -1878,7 +2135,12 @@
       var st = tr.getAttribute('data-status') || '';
       var err = tr.getAttribute('data-error') === '1';
       var okName = !q || nm.indexOf(q) >= 0;
-      var okStatus = (cboStatus === 'all') || (cboStatus === 'error' ? err : st === cboStatus);
+      var okStatus;
+      if (cboStatus === 'all') okStatus = true;
+      else if (cboStatus === 'error') okStatus = err;
+      else if (cboStatus === 'teste') okStatus = nm.indexOf('teste') >= 0;
+      else if (cboStatus === 'abo') okStatus = nm.indexOf('abo') >= 0;
+      else okStatus = (st === cboStatus);
       tr.style.display = (okName && okStatus) ? '' : 'none';
     });
   }
@@ -2318,6 +2580,7 @@
       curTab = this.dataset.tab;
       document.getElementById('tab-'+curTab).classList.add('show');
       if (curTab === 'hist') { renderHist(); fetchRoboHist(); }
+      else if (curTab === 'abo') { if (!aboData.length && !aboLoading) loadABO(); }
     });
   });
   /* Controles do painel de Historico */
@@ -2352,9 +2615,28 @@
     if (!getHist().length) { alert('O historico ja esta vazio.'); return; }
     if (confirm('Apagar TODO o historico de regras aplicadas? Esta acao nao pode ser desfeita.')) { clearHist(); histOpen = {}; renderHist(); }
   });
-  document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else load(); });
+  document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else if (curTab === 'abo') loadABO(); else load(); });
   document.getElementById('btnTokens').addEventListener('click', openModal);
   document.getElementById('btnLoadCBO').addEventListener('click', loadCBO);
+  var btnLoadABO = document.getElementById('btnLoadABO');
+  if (btnLoadABO) btnLoadABO.addEventListener('click', loadABO);
+  var aboSrchEl = document.getElementById('aboSrch');
+  if (aboSrchEl) aboSrchEl.addEventListener('input', applyAboFilters);
+  /* Seletor de periodo da aba ABO (independente do CBO). */
+  document.querySelectorAll('#mdb [data-aboperiod]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      aboPeriod = this.dataset.aboperiod;
+      document.querySelectorAll('#mdb [data-aboperiod]').forEach(function(b) { b.classList.remove('on'); });
+      this.classList.add('on');
+      if (aboData.length && !aboLoading) {
+        aboLoading = true;
+        var sp = document.getElementById('spinABO'); if (sp) sp.style.display = 'inline-block';
+        fetchABOData(aboData.slice());
+      } else if (!aboData.length) {
+        loadABO();
+      }
+    });
+  });
   document.getElementById('btnAddTk').addEventListener('click', function() { var t = getTks(); t.push(''); saveTksLS(t); renderTkList(); });
   document.getElementById('btnModalCancel').addEventListener('click', closeModal);
   document.getElementById('btnModalSave').addEventListener('click', function() {
