@@ -329,7 +329,7 @@
     accBase: 1.5,           // piso de ROAS padrao (<=2 vendas, ou >2 vendas em dia nao-bom)
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
-    cutNoSaleSpend: 90,  // gastou >= isso e 0 venda -> CORTA
+    cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
     aumRoasLow: 1.5,     // ROAS bom: faixa de aumento proporcional (1.5 a 1.9)
@@ -1479,20 +1479,20 @@
     /* CORTAR = empurra o termino p/ daqui cutDays (364). O diario vira saldo/364 (bem baixo). */
     var cortarTarget = rem > 0 ? (rem / RULES.cutDays) : RULES.floorDaily;
     var curDaily = currentDailyOf(camp); /* ritmo diario atual: ESCALAR/AUMENTAR NUNCA pode reduzir isso */
+    var clk = camp._clicks || 0, ic = (camp._conv ? camp._conv.ic : 0) || 0;
+    var cpc = clk > 0 ? (sp / clk) : (sp > 0 ? Infinity : 0);
+    /* ── PAUSAR (status PAUSED; substitui o antigo CORTAR +364d). TESTE ja saiu la em cima. ──
+       A) 0 venda e gasto >= cutNoSaleSpend(100); B) 0 venda, CPC>pauseCpc, 0 IC, gasto>pauseSpend; C) ROAS <= 1,3 com venda. */
+    if (sales === 0 && sp >= RULES.cutNoSaleSpend) return { action: 'PAUSAR (0 venda, $' + Math.round(sp) + ' gastos)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
+    if (sales === 0 && ic === 0 && cpc > RULES.pauseCpc && sp > RULES.pauseSpend) return { action: 'PAUSAR (CPC ' + (isFinite(cpc) ? '$' + cpc.toFixed(2) : 'alto/0 cliques') + ', 0 venda/IC, $' + Math.round(sp) + ')', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
+    if (sales >= 1 && roas <= cutFloor) return { action: 'PAUSAR (ROAS ' + roasFmt + ' <= ' + minRoasTxt + ', ' + sales + ' venda)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
 
     if (sales === 0) {
-      /* SEM VENDA: gastou o suficiente -> corta p/ piso; senao "Coletando". */
-      if (sp >= RULES.cutNoSaleSpend) { target = cortarTarget; action = 'CORTAR (termino +' + RULES.cutDays + 'd, sem venda, $' + Math.round(sp) + ' gastos)'; cls = 'd-bad'; key = 'CORTAR'; }
-      else { action = 'Coletando (sem venda)'; key = 'COLETANDO'; }
+      /* 0 venda com gasto < cutNoSaleSpend (senao ja teria PAUSADO acima) -> Coletando. */
+      action = 'Coletando (sem venda)'; key = 'COLETANDO';
     } else if (sales > RULES.aumMaxSales) {
-      /* CAMPANHA COM VOLUME (>5 vendas): decisao do usuario — so REDUZ o orcamento se o ROAS
-         estiver ABAIXO de 1,3 (corte). ROAS >= 2,0 (ou vende sem gasto hoje) ainda ESCALA.
-         Entre 1,3 e 2,0 -> MANTER (nao mexe no orcamento). Nunca cai em LIMITAR nem AUMENTAR. */
-      if (roas < cutFloor) {
-        /* ROAS abaixo do minimo = prejuizo -> CORTAR (empurra termino +364 dias). */
-        target = cortarTarget;
-        action = 'CORTAR (termino +' + RULES.cutDays + 'd, ' + sales + ' vendas, ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
-      } else if (roas >= RULES.excRoas || (sp < 1 && sales > 0)) {
+      /* >5 vendas: ROAS<=1,3 ja pausou acima. ROAS >= 2,0 (ou vende sem gasto) ESCALA; 1,3<roas<2,0 -> MANTER. */
+      if (roas >= RULES.excRoas || (sp < 1 && sales > 0)) {
         /* EXCELENTE -> ESCALAR, MAS nunca REDUZIR: se o alvo for <= ao ritmo diario atual,
            MANTER (preserva o orcamento maior ja em uso / setado manualmente). */
         var escV = Math.max(sp, RULES.floorDaily) * RULES.scaleMult;
@@ -1539,21 +1539,15 @@
           action = 'MANTER (ROAS ' + roasFmt + ', ja em ~$' + Math.round(Math.max(curDaily, sp)) + '/dia)'; cls = 'd-good'; key = 'MANTER';
         }
       }
-    } else if (roas >= cutFloor) {
-      /* VENDEU, ROAS abaixo do piso aceitavel mas ACIMA de 1,3 -> LIMITAR no GASTO de hoje
-         (trava, nao mata). Ex: 1 venda ROAS 1,42 < piso 1,5 -> trava no gasto. */
+    } else {
+      /* ROAS entre 1,3 (exclusivo — <=1,3 ja PAUSOU) e o piso -> LIMITAR no gasto de hoje. */
       target = Math.max(sp, RULES.floorDaily);
       action = 'LIMITAR no gasto (~$' + Math.round(target) + ', ROAS ' + roasFmt + ' < piso ' + minAccTxt + ')'; cls = 'd-warn'; key = 'LIMITAR';
-    } else {
-      /* ROAS abaixo do minimo aceitavel = prejuizo -> CORTAR (empurra termino +364 dias). */
-      target = cortarTarget;
-      action = 'CORTAR (termino +' + RULES.cutDays + 'd, ROAS ' + roasFmt + ' < ' + minRoasTxt + ')'; cls = 'd-bad'; key = 'CORTAR';
     }
     var newEnd = null;
     if (target && rem > 0) { newEnd = brDatePlus(Math.max(1, Math.ceil(rem / target))); }
-    /* Assinatura da regra = TIPO (key). Nao inclui o valor, pra nao reaparecer o botao quando
-       o alvo varia (ex: ESCALAR/AUMENTAR). Mesmo tipo aplicado hoje = nao mostra de novo. */
-    var sig = target ? key : null;
+    /* Assinatura da regra = TIPO (key). PAUSAR entra mesmo sem target (é status, não orçamento). */
+    var sig = (target || key === 'PAUSAR') ? key : null;
     return { action: action, cls: cls, target: target, newEnd: newEnd, key: key, sig: sig };
   }
   /* Registro (por dispositivo) da ultima regra aplicada em cada campanha, com hora. Reseta a cada dia. */
@@ -1851,7 +1845,25 @@
 
   function applyRuleSuggestion(i) {
     var camp = cboData[i];
-    if (!camp || !camp._sugEnd) { alert('Sem sugestao aplicavel para esta campanha.'); return; }
+    if (!camp) return;
+    /* PAUSAR: muda status pra PAUSED (nao e mudanca de data/orcamento). */
+    if (camp._sugSig === 'PAUSAR') {
+      if (!confirm('PAUSAR a campanha "' + camp.name + '" no Meta?\n' + (camp._sugAction || ''))) return;
+      var pb = document.getElementById('csug_'+i);
+      if (pb) { pb.disabled = true; pb.textContent = 'Pausando...'; }
+      withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, { status: 'PAUSED' }); })
+        .then(function(r){
+          camp._tk = r.tk; camp.status = 'PAUSED'; camp.effective_status = 'PAUSED';
+          setAppliedRule(camp.id, 'PAUSAR', camp._sugAction);
+          var cd = currentDailyOf(camp);
+          logRuleHist(camp, 'PAUSAR', camp._sugAction, { dailyOld: cd > 0 ? cd : null, dailyNew: null, endOld: null, endNew: null });
+          renderCBO();
+          if (curTab === 'hist') renderHist();
+        })
+        .catch(function(e){ alert('Erro ao pausar: ' + (e && e.message ? e.message : '')); if (pb) { pb.disabled = false; pb.textContent = 'Pausar campanha'; } });
+      return;
+    }
+    if (!camp._sugEnd) { alert('Sem sugestao aplicavel para esta campanha.'); return; }
     /* Marca como aplicada JA (otimista): assim a MESMA regra nao reaparece com botao,
        mesmo que a verificacao da data em CBO vitalicia nao bata exata. */
     if (camp._sugSig) setAppliedRule(camp.id, camp._sugSig, camp._sugAction);
@@ -1979,7 +1991,11 @@
           var applied = getAppliedRule(camp.id);
           var sameApplied = applied && rule.sig && applied.sig === rule.sig;
           sugTxt = '<span class="'+rule.cls+'" style="font-size:11px;font-weight:600">'+rule.action+'</span>';
-          if (rule.newEnd && sameApplied) {
+          if (rule.key === 'PAUSAR') {
+            /* PAUSAR: botao vermelho de pausar (aplica via applyRuleSuggestion -> status PAUSED). */
+            if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; pausada as '+hhmm(applied.t)+'</div>'; }
+            else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#f85149;border-color:#f85149">Pausar campanha</button>'; }
+          } else if (rule.newEnd && sameApplied) {
             /* Mesma regra ja aplicada hoje -> mostra a hora, SEM botao. */
             sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; aplicada as '+hhmm(applied.t)+'</div>';
           } else if (rule.newEnd) {
