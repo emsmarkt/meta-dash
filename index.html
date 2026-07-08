@@ -330,7 +330,7 @@
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
-    pauseRoas: 1.5, escRoas: 1.7, escPct: 0.30, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS<1,5; >3 vd: pausa ROAS<=1,3; ROAS>1,7 e 3+ vd -> +30%. Reativa: ROAS>1,5
+    pauseRoas: 1.5, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS<1,5; >3 vd: pausa ROAS<=1,3; ROAS>1,7 e 3+ vd -> +20%. Reativa: ROAS>1,5
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
     aumRoasLow: 1.5,     // ROAS bom: faixa de aumento proporcional (1.5 a 1.9)
@@ -1499,7 +1499,7 @@
     if (sales > RULES.pauseSalesBreak && roas <= cutFloor) return { action: 'PAUSAR (ROAS ' + roasFmt + ' <= ' + minRoasTxt + ', ' + sales + ' vendas)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
     /* Nao pausou. >5 vendas (aumMaxSales) -> MANTER (escala/gestao MANUAL, robo nao mexe). */
     if (sales > RULES.aumMaxSales) return { action: 'MANTER (>' + RULES.aumMaxSales + ' vendas, ROAS ' + roasFmt + ' — gestao manual)', cls: 'd-good', target: null, newEnd: null, key: 'MANTER', sig: null };
-    /* ROAS >= 1,5: AUMENTAR +30% do DIARIO ATUAL so se ROAS > escRoas(1,7) E 3+ vendas; senao MANTER. */
+    /* ROAS >= 1,5: AUMENTAR +20% do DIARIO ATUAL so se ROAS > escRoas(1,7) E 3+ vendas; senao MANTER. */
     if (roas > RULES.escRoas && sales >= RULES.excMinSales) {
       var base = curDaily > 0 ? curDaily : Math.max(sp, RULES.floorDaily);
       var tgt = base * (1 + RULES.escPct);
