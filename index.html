@@ -417,12 +417,73 @@
     var all = [];
     function go(u) {
       return fj(u).then(function(d) {
+        if (d && d.error) console.warn('Graph err:', d.error.message);
         if (d && d.data && d.data.length) all = all.concat(d.data);
         if (d && d.paging && d.paging.next) return go(d.paging.next);
         return all;
       }).catch(function(){ return all; });
     }
     return go(url);
+  }
+  /* Igual fjPaged, mas DEVOLVE o erro junto ({data, error}) p/ avisar token quebrado na tela
+     (senao as contas daquele token somem em silencio). */
+  function fjPagedE(url) {
+    var all = [], err = null;
+    function go(u) {
+      return fj(u).then(function(d) {
+        if (d && d.error) { err = err || d.error; return { data: all, error: err }; }
+        if (d && d.data && d.data.length) all = all.concat(d.data);
+        if (d && d.paging && d.paging.next) return go(d.paging.next);
+        return { data: all, error: err };
+      }).catch(function(e) { err = err || { message: String((e && e.message) || e) }; return { data: all, error: err }; });
+    }
+    return go(url);
+  }
+  /* TODAS as contas de anuncio visiveis por um token, sem duplicar.
+     /me/adaccounts devolve SO as contas em que o usuario tem cargo DIRETO. As contas acessadas
+     via Business Manager (owned_ad_accounts + client_ad_accounts de cada BM) NAO vinham —
+     no perfil do usuario eram 74 diretas vs 141 no total (67 so via BM). client_ad_accounts pagina.
+     Devolve { data: [...], error: <erro do token, se houver> }. */
+  function fetchAllAdAccounts(tk, fields) {
+    var res = { data: [], error: null }, seen = {};
+    function add(list) {
+      (list || []).forEach(function(a) { if (a && a.id && !seen[a.id]) { seen[a.id] = 1; res.data.push(a); } });
+    }
+    return fjPagedE(API+'/me/adaccounts?fields='+fields+'&limit=100&access_token='+tk).then(function(r) {
+      if (r.error) res.error = r.error;
+      add(r.data);
+      return fjPaged(API+'/me/businesses?fields=name&limit=100&access_token='+tk);
+    }).then(function(bms) {
+      /* thunks (nao promises) p/ limitar a concorrencia em blocos de 8 */
+      var jobs = [];
+      (bms || []).forEach(function(b) {
+        ['owned_ad_accounts', 'client_ad_accounts'].forEach(function(edge) {
+          jobs.push(function() { return fjPaged(API+'/'+b.id+'/'+edge+'?fields='+fields+'&limit=100&access_token='+tk); });
+        });
+      });
+      var i = 0;
+      function nextChunk() {
+        if (i >= jobs.length) return Promise.resolve();
+        var chunk = jobs.slice(i, i + 8); i += 8;
+        return Promise.all(chunk.map(function(f) { return f(); })).then(function(lists) { lists.forEach(add); return nextChunk(); });
+      }
+      return nextChunk();
+    }).then(function() { return res; })
+      .catch(function(e) { res.error = res.error || { message: String((e && e.message) || e) }; return res; });
+  }
+  /* Banner de aviso acima da tabela de Contas quando algum token falha. */
+  function showTokenWarn(msgs) {
+    var old = document.getElementById('tokWarn'); if (old) old.parentNode.removeChild(old);
+    if (!msgs || !msgs.length) return;
+    var tb = document.getElementById('tbody'); if (!tb) return;
+    var tbl = tb.parentNode; while (tbl && tbl.tagName !== 'TABLE') tbl = tbl.parentNode;
+    if (!tbl || !tbl.parentNode) return;
+    var d = document.createElement('div');
+    d.id = 'tokWarn';
+    d.style.cssText = 'margin:8px 0;padding:10px 12px;border:1px solid #f0883e;background:#2d1e0f;color:#f0883e;border-radius:6px;font-size:13px;line-height:1.6';
+    d.innerHTML = '&#9888;&#65039; <b>' + msgs.length + ' token(s) falharam</b> &mdash; as contas desses tokens N&Atilde;O aparecem abaixo.<br>' +
+      msgs.map(function(m) { return '&bull; ' + m; }).join('<br>');
+    tbl.parentNode.insertBefore(d, tbl);
   }
   function fmtUSD(v) {
     if (!v || v === '0' || v === 0) return '---';
@@ -614,17 +675,21 @@
     setSpin(true); renderShell();
     document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld"><span class="spin"></span>Buscando contas...</td></tr>';
     var map = {};
+    var tokErrs = [];
     var chain = Promise.resolve();
-    tks.forEach(function(tk) {
+    /* fetchAllAdAccounts = /me/adaccounts + contas de TODOS os Business Managers (owned+client).
+       Token quebrado agora vira aviso na tela, nao silencio. */
+    tks.forEach(function(tk, ti) {
       chain = chain.then(function() {
-        return fj(API+'/me/adaccounts?fields=name,account_status,spend_cap,currency,funding_source_details&limit=200&access_token='+tk).then(function(d) {
-          if (d.error) { console.warn('Token err:', d.error.message); return; }
-          (d.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
-        }).catch(function(e) { console.warn(e); });
+        return fetchAllAdAccounts(tk, 'name,account_status,spend_cap,currency,funding_source_details').then(function(res) {
+          if (res.error) { tokErrs.push('Token ' + (ti+1) + ': ' + (res.error.message || 'falhou')); console.warn('Token err:', res.error.message); }
+          (res.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
+        }).catch(function(e) { tokErrs.push('Token ' + (ti+1) + ': ' + e); console.warn(e); });
       });
     });
     chain.then(function() {
       var accounts = Object.values(map);
+      showTokenWarn(tokErrs);
       if (!accounts.length) { document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld" style="color:#f85149">Nenhuma conta encontrada. Verifique o token em &#9881; Tokens.</td></tr>'; setSpin(false); return; }
       document.getElementById('tbody').innerHTML = '<tr><td colspan="11" class="ld"><span class="spin"></span>Carregando dados de '+accounts.length+' contas...</td></tr>';
       var idx = 0;
@@ -1042,9 +1107,9 @@
     var chain = fetchFxLive().catch(function(){}); /* puxa a cotacao USD/BRL ao vivo ANTES de converter os custos */
     tks.forEach(function(tk) {
       chain = chain.then(function() {
-        /* fjPaged segue a paginacao — antes pegava so a 1a pagina e faltavam contas. */
-        return fjPaged(API+'/me/adaccounts?fields=name,account_status&limit=100&access_token='+tk).then(function(list) {
-          list.forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
+        /* fetchAllAdAccounts: diretas + as dos Business Managers (antes faltavam ~67 contas). */
+        return fetchAllAdAccounts(tk, 'name,account_status').then(function(res) {
+          (res.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
         }).catch(function(e) { console.warn(e); });
       });
     });
@@ -1217,8 +1282,9 @@
     var chain = Promise.resolve();
     tks.forEach(function(tk) {
       chain = chain.then(function() {
-        return fjPaged(API+'/me/adaccounts?fields=name,account_status&limit=100&access_token='+tk).then(function(list) {
-          list.forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
+        /* fetchAllAdAccounts: diretas + as dos Business Managers (antes faltavam ~67 contas). */
+        return fetchAllAdAccounts(tk, 'name,account_status').then(function(res) {
+          (res.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
         }).catch(function(e) { console.warn(e); });
       });
     });
