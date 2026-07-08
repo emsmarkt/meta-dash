@@ -2725,6 +2725,12 @@
   fetchFxLive();
   load();
   if (timer) clearInterval(timer);
-  timer = setInterval(function() { if (curTab === 'contas') load(); }, 5*60*1000);
+  /* Auto-refresh a cada 5 min SO no desktop. No celular (toque/tela pequena) NAO recarrega
+     sozinho — reconstruir a tabela jogava o scroll pro topo e atrapalhava o usuario.
+     No mobile o refresh e manual (trocar de aba / recarregar a pagina). */
+  var isMobile = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || window.innerWidth < 820;
+  if (!isMobile) {
+    timer = setInterval(function() { if (curTab === 'contas') load(); }, 5*60*1000);
+  }
 })();
 </script>
