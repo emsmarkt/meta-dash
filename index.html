@@ -110,6 +110,7 @@
         <button class="tab-btn on" data-tab="contas">Contas</button>
         <button class="tab-btn" data-tab="cbo">&#128197; CBO Calculator</button>
         <button class="tab-btn" data-tab="abo">&#128202; ABO</button>
+        <button class="tab-btn" data-tab="orc">&#128176; Or&ccedil;amento</button>
         <button class="tab-btn" data-tab="hist">&#128220; Hist&#243;rico</button>
       </div>
       <span class="ts" id="tsLbl"></span>
@@ -248,6 +249,24 @@
       <button class="btn" id="histClear" style="border-color:#f85149;color:#f85149">&#128465; Limpar hist&#243;rico</button>
     </div>
     <div id="histBody"></div>
+  </div>
+  <div class="tab-pane" id="tab-orc">
+    <div class="cbo-info">
+      <strong>&#128176; Altera&#231;&#245;es de or&#231;amento</strong> &mdash; toda vez que o <b>rob&#244;</b> ou <b>voc&#234;</b> (bot&#227;o Aplicar) mudar o or&#231;amento desejado de uma campanha, fica aqui: <b>hor&#225;rio exato</b>, valor <b>anterior &rarr; novo</b> e a origem (Manual / Rob&#244;). Pausar/Ativar n&#227;o entram aqui (n&#227;o mexem em or&#231;amento).
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input class="srch" id="orcSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
+      <span style="font-size:12px;color:#6e7681">Dia:</span>
+      <input type="date" id="orcDay" class="cbo-date" style="width:150px;cursor:pointer">
+      <button class="pill" id="orcDayClear">Todos os dias</button>
+      <span style="font-size:12px;color:#6e7681;margin-left:6px">Origem:</span>
+      <button class="pill on" id="orcSrcAll" data-src="all">Todas</button>
+      <button class="pill" id="orcSrcManual" data-src="manual">&#9995; Manual</button>
+      <button class="pill" id="orcSrcRobo" data-src="robo">&#129302; Rob&#244;</button>
+      <span style="font-size:12px;color:#6e7681;margin-left:6px">Estrutura:</span>
+      <select id="orcTkSel" class="cbo-date" style="width:170px;cursor:pointer"><option value="all">Todas</option></select>
+    </div>
+    <div id="orcBody"></div>
   </div>
   <div class="foot-note">
     <span>Meta Graph API v21.0 &mdash; dados em tempo real</span>
@@ -1680,7 +1699,7 @@
     }).then(function(arr) {
       if (!Array.isArray(arr)) throw new Error('bad json');
       /* Fonte primaria: RESPEITA o source do servidor (nao re-rotula manual como robo). */
-      if (mergeRoboHist(arr, false) && curTab === 'hist') renderHist();
+      if (mergeRoboHist(arr, false)) { if (curTab === 'hist') renderHist(); else if (curTab === 'orc') renderOrc(); }
     }).catch(function() {
       /* 2) fallback /applied — {id:{sig,action,t,day}} (assume robo) */
       fetch(u + '/applied').then(function(r) {
@@ -1692,7 +1711,7 @@
           var v = map[id] || {};
           return { id: id, name: campNameById(id) || ('#'+id), t: v.t || Date.now(), day: v.day || '', sig: v.sig || '', action: v.action || '', source: 'robo' };
         });
-        if (mergeRoboHist(robos, true) && curTab === 'hist') renderHist();
+        if (mergeRoboHist(robos, true)) { if (curTab === 'hist') renderHist(); else if (curTab === 'orc') renderOrc(); }
       }).catch(function() {
         /* 3) fallback / (lastRun) — em DRY sao SUGESTOES, nao aplicacoes. So como ultimo recurso. */
         fetch(u + '/').then(function(r) { return r.json(); }).then(function(d) {
@@ -1703,7 +1722,7 @@
             a = a || {};
             return { id: a.id, name: a.name || ('#'+a.id), t: t, day: day, sig: (a.action||'').split('_')[0], action: a.action || '', roas: a.roas, sales: a.sales, spend: a.spend, dailyNew: (a.target!=null?Math.round(a.target):null), endNew: a.newEnd || null, source: 'robo' };
           });
-          if (mergeRoboHist(robos, true) && curTab === 'hist') renderHist();
+          if (mergeRoboHist(robos, true)) { if (curTab === 'hist') renderHist(); else if (curTab === 'orc') renderOrc(); }
         }).catch(function() {});
       });
     });
@@ -1773,6 +1792,66 @@
     if (parts.length) out += '<div style="font-size:14px;color:#c9d1d9;margin-top:3px">' + parts.join(' &middot; ') + '</div>';
     if (snap.length) out += '<div style="font-size:13px;color:#6e7681;margin-top:3px">' + snap.join(' &middot; ') + '</div>';
     return out;
+  }
+  /* ===== Aba ORCAMENTO: so as entradas do historico que MUDARAM orcamento (dailyNew presente),
+     em ordem cronologica (mais recente primeiro), com antes -> depois e origem. ===== */
+  var orcSrc = 'all', orcTk = 'all';
+  function renderOrc() {
+    var body = document.getElementById('orcBody');
+    if (!body) return;
+    var all = getHist();
+    var srchEl = document.getElementById('orcSrch');
+    var dayEl = document.getElementById('orcDay');
+    var q = srchEl ? srchEl.value.trim().toLowerCase() : '';
+    var dayF = dayEl ? dayEl.value : '';
+    /* SO mudancas de orcamento: dailyNew numerico. PAUSAR/ATIVAR/MANTER (sem target) ficam de fora. */
+    var budget = all.filter(function(e) { return typeof e.dailyNew === 'number' && e.dailyNew !== null; });
+    /* popula o <select> de estrutura com os rotulos presentes */
+    var tkSel = document.getElementById('orcTkSel');
+    if (tkSel) {
+      var labels = {}; budget.forEach(function(e) { var L = histTokenLabel(e); if (L && L !== '—') labels[L] = true; });
+      var opts = Object.keys(labels).sort();
+      var want = 'all|' + opts.join('|');
+      if (tkSel.getAttribute('data-built') !== want) {
+        tkSel.innerHTML = '<option value="all">Todas</option>' + opts.map(function(L) {
+          var ev = String(L).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+          return '<option value="' + ev + '">' + ev + '</option>';
+        }).join('');
+        if (orcTk !== 'all' && !labels[orcTk]) orcTk = 'all';
+        tkSel.value = orcTk;
+        tkSel.setAttribute('data-built', want);
+      }
+    }
+    var list = budget.filter(function(e) {
+      if (orcSrc !== 'all' && histSourceOf(e) !== orcSrc) return false;
+      if (orcTk !== 'all' && histTokenLabel(e) !== orcTk) return false;
+      if (dayF && e.day !== dayF) return false;
+      if (q && String(e.name || '').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    list.sort(function(a, b) { return (b.t || 0) - (a.t || 0); });
+    if (!budget.length) {
+      body.innerHTML = '<div class="ld">Nenhuma altera&#231;&#227;o de or&#231;amento registrada ainda. Quando o rob&#244; (em live) ou voc&#234; (bot&#227;o Aplicar na aba CBO) mudar o or&#231;amento de uma campanha, aparece aqui com hor&#225;rio e antes &rarr; depois.</div>';
+      return;
+    }
+    if (!list.length) { body.innerHTML = '<div class="ld">Nenhuma altera&#231;&#227;o bate com o filtro atual.</div>'; return; }
+    var html = '', lastDay = '';
+    list.forEach(function(e) {
+      if (e.day !== lastDay) {
+        lastDay = e.day;
+        html += '<div style="font-size:13px;color:#6e7681;font-weight:700;margin:16px 0 6px">' + (histBR(e.day) || e.day) + '</div>';
+      }
+      var oldD = (typeof e.dailyOld === 'number' && e.dailyOld > 0) ? histUSD(e.dailyOld) : '<span style="color:#6e7681">&mdash;</span>';
+      var arrow = oldD + ' <span style="color:#6e7681">&rarr;</span> <b style="color:#3fb950">' + histUSD(e.dailyNew) + '</b><span style="font-size:12px;color:#6e7681">/dia</span>';
+      var struct = histTokenLabel(e); var structTxt = (struct && struct !== '—') ? '<span style="font-size:12px;color:#6e7681"> &middot; ' + struct + '</span>' : '';
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid #21262d;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
+        + '<span style="font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;min-width:54px">' + hhmm(e.t) + '</span>'
+        + histSrcBadge(e)
+        + '<span style="flex:1;min-width:160px;font-size:14px">' + String(e.name || '').replace(/</g, '&lt;') + structTxt + '</span>'
+        + '<span style="font-size:16px;white-space:nowrap">' + arrow + '</span>'
+        + '</div>';
+    });
+    body.innerHTML = html;
   }
   /* Estado de grupos expandidos no painel de historico. */
   var histOpen = {};
@@ -1924,6 +2003,7 @@
     if (di) di.value = camp._sugEnd;
     saveCBODate(i);
     if (curTab === 'hist') renderHist();
+    if (curTab === 'orc') renderOrc();
   }
 
   function renderCBO() {
@@ -2624,6 +2704,7 @@
       curTab = this.dataset.tab;
       document.getElementById('tab-'+curTab).classList.add('show');
       if (curTab === 'hist') { renderHist(); fetchRoboHist(); }
+      else if (curTab === 'orc') { renderOrc(); fetchRoboHist(); }
       else if (curTab === 'abo') { if (!aboData.length && !aboLoading) loadABO(); }
     });
   });
@@ -2658,6 +2739,30 @@
   if (histClearEl) histClearEl.addEventListener('click', function() {
     if (!getHist().length) { alert('O historico ja esta vazio.'); return; }
     if (confirm('Apagar TODO o historico de regras aplicadas? Esta acao nao pode ser desfeita.')) { clearHist(); histOpen = {}; renderHist(); }
+  });
+  /* Controles do painel de Orcamento (espelho do Historico) */
+  var orcSrchEl = document.getElementById('orcSrch');
+  if (orcSrchEl) orcSrchEl.addEventListener('input', renderOrc);
+  var orcDayEl = document.getElementById('orcDay');
+  if (orcDayEl) {
+    orcDayEl.addEventListener('change', renderOrc);
+    var openOrcPicker = function() { try { if (typeof orcDayEl.showPicker === 'function') orcDayEl.showPicker(); } catch (e) {} };
+    orcDayEl.addEventListener('click', openOrcPicker);
+    orcDayEl.addEventListener('focus', openOrcPicker);
+  }
+  var orcDayClearEl = document.getElementById('orcDayClear');
+  if (orcDayClearEl) orcDayClearEl.addEventListener('click', function() { var d = document.getElementById('orcDay'); if (d) d.value = ''; renderOrc(); });
+  var orcTkSelEl = document.getElementById('orcTkSel');
+  if (orcTkSelEl) orcTkSelEl.addEventListener('change', function() { orcTk = this.value || 'all'; renderOrc(); });
+  ['orcSrcAll', 'orcSrcManual', 'orcSrcRobo'].forEach(function(bid) {
+    var b = document.getElementById(bid);
+    if (!b) return;
+    b.addEventListener('click', function() {
+      orcSrc = this.dataset.src || 'all';
+      document.querySelectorAll('#orcSrcAll,#orcSrcManual,#orcSrcRobo').forEach(function(x) { x.classList.remove('on'); });
+      this.classList.add('on');
+      renderOrc();
+    });
   });
   document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else if (curTab === 'abo') loadABO(); else load(); });
   document.getElementById('btnTokens').addEventListener('click', openModal);
