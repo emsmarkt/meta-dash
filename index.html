@@ -1818,7 +1818,9 @@
   }
   /* ===== Aba ORCAMENTO: so as entradas do historico que MUDARAM orcamento (dailyNew presente),
      em ordem cronologica (mais recente primeiro), com antes -> depois e origem. ===== */
-  var orcSrc = 'all', orcTk = 'all';
+  var orcSrc = 'all', orcTk = 'all', orcOpen = {};
+  function toggleOrcGroup(k, cur) { orcOpen[k] = !cur; renderOrc(); }
+  window.__mdToggleOrc = toggleOrcGroup;
   function renderOrc() {
     var body = document.getElementById('orcBody');
     if (!body) return;
@@ -1858,22 +1860,46 @@
       return;
     }
     if (!list.length) { body.innerHTML = '<div class="ld">Nenhuma altera&#231;&#227;o bate com o filtro atual.</div>'; return; }
-    var html = '', lastDay = '';
+    /* AGRUPA POR CAMPANHA (id): 1 bloco por campanha, recolhivel, com as alteracoes DELA juntas.
+       Buscando um nome (ou <=3 campanhas) ja abre expandido. */
+    var groups = {}, order = [];
     list.forEach(function(e) {
-      if (e.day !== lastDay) {
-        lastDay = e.day;
-        html += '<div style="font-size:13px;color:#6e7681;font-weight:700;margin:16px 0 6px">' + (histBR(e.day) || e.day) + '</div>';
-      }
-      var oldD = (typeof e.dailyOld === 'number' && e.dailyOld > 0) ? histUSD(e.dailyOld) : '<span style="color:#6e7681">&mdash;</span>';
-      var arrow = oldD + ' <span style="color:#6e7681">&rarr;</span> <b style="color:#3fb950">' + histUSD(e.dailyNew) + '</b><span style="font-size:12px;color:#6e7681">/dia</span>';
-      var struct = histTokenLabel(e); var structTxt = (struct && struct !== '—') ? '<span style="font-size:12px;color:#6e7681"> &middot; ' + struct + '</span>' : '';
-      html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid #21262d;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
-        + '<span style="font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;min-width:54px">' + hhmm(e.t) + '</span>'
-        + histSrcBadge(e)
-        + '<span style="flex:1;min-width:160px;font-size:14px">' + String(e.name || '').replace(/</g, '&lt;') + structTxt + '</span>'
-        + '<span style="font-size:16px;white-space:nowrap">' + arrow + '</span>'
-        + '</div>';
+      var k = e.id || e.name || '?';
+      if (!groups[k]) { groups[k] = { id: e.id, name: e.name || ('#' + e.id), items: [], last: 0, struct: histTokenLabel(e) }; order.push(k); }
+      groups[k].items.push(e);
+      if ((e.t || 0) > groups[k].last) groups[k].last = e.t;
     });
+    order.sort(function(a, b) { return groups[b].last - groups[a].last; });
+    var defOpen = !!q || order.length <= 3;
+    var html = order.map(function(k) {
+      var g = groups[k];
+      var items = g.items.slice().sort(function(a, b) { return (b.t || 0) - (a.t || 0); });
+      var open = (k in orcOpen) ? orcOpen[k] : defOpen;
+      var kEsc = String(k).replace(/'/g, "\\'");
+      var nm = String(g.name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      var structTxt = (g.struct && g.struct !== '—') ? '<span style="color:#6e7681;font-size:11px;white-space:nowrap"> &middot; ' + g.struct + '</span>' : '';
+      var latestVal = '<b style="color:#3fb950">' + histUSD(items[0].dailyNew) + '</b><span style="font-size:11px;color:#6e7681">/dia</span>';
+      var head = '<div onclick="window.__mdToggleOrc(\'' + kEsc + '\',' + open + ')" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:11px 14px;background:#161b22;border:1px solid #21262d;border-radius:8px;margin-bottom:' + (open ? '0;border-bottom-left-radius:0;border-bottom-right-radius:0' : '8px') + '">'
+        + '<span style="color:#8b949e;font-size:12px;width:12px;flex:none">' + (open ? '&#9660;' : '&#9654;') + '</span>'
+        + '<span style="font-weight:700;color:#f0f6fc;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nm + '</span>'
+        + structTxt
+        + '<span style="flex:1"></span>'
+        + '<span style="font-size:15px;white-space:nowrap">' + latestVal + '</span>'
+        + '<span style="background:#21262d;color:#8b949e;font-size:12px;padding:3px 10px;border-radius:20px;flex:none">' + g.items.length + '&times;</span>'
+        + '</div>';
+      if (!open) return head;
+      var rows = items.map(function(e) {
+        var oldD = (typeof e.dailyOld === 'number' && e.dailyOld > 0) ? histUSD(e.dailyOld) : '<span style="color:#6e7681">&mdash;</span>';
+        var arrow = oldD + ' <span style="color:#6e7681">&rarr;</span> <b style="color:#3fb950">' + histUSD(e.dailyNew) + '</b><span style="font-size:11px;color:#6e7681">/dia</span>';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 14px 9px 34px;border-bottom:1px solid #21262d;flex-wrap:wrap">'
+          + '<span style="color:#8b949e;font-size:12px;min-width:104px">' + hhmm(e.t) + ' &middot; ' + histBR(e.day) + '</span>'
+          + histSrcBadge(e)
+          + '<span style="flex:1"></span>'
+          + '<span style="font-size:15px;white-space:nowrap">' + arrow + '</span>'
+          + '</div>';
+      }).join('');
+      return head + '<div style="background:#0d1117;border:1px solid #21262d;border-top:none;border-radius:0 0 8px 8px;margin-bottom:8px">' + rows + '</div>';
+    }).join('');
     body.innerHTML = html;
   }
   /* Estado de grupos expandidos no painel de historico. */
@@ -2030,7 +2056,9 @@
       }).catch(function(e){ alert('Erro ao limitar: ' + (e && e.message ? e.message : '')); if (lb) { lb.disabled = false; lb.textContent = 'Limitar gasto'; } });
       return;
     }
-    /* REMOVER LIMITE: zera o lifetime_spend_cap dos conjuntos limitados -> campanha volta a rodar. */
+    /* REMOVER LIMITE: LIMPA o lifetime_spend_cap dos conjuntos (= DESMARCAR a opcao no Facebook) -> campanha volta a rodar.
+       IMPORTANTE: mandar 0 NAO funciona (o Facebook le como "teto de $0" e recusa: "precisa ser pelo menos $X").
+       O certo e mandar o campo VAZIO ('' = unset), que e o equivalente a desmarcar o checkbox de limite. */
     if (camp._sugSig === 'REMLIMITE') {
       var capped = (camp._adsets || []).filter(function(s){ return s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0; });
       if (!capped.length) capped = (camp._adsets || []).filter(function(s){ return (s.effective_status||'').toUpperCase() === 'ACTIVE'; });
@@ -2039,7 +2067,7 @@
       var rb = document.getElementById('csug_'+i);
       if (rb) { rb.disabled = true; rb.textContent = 'Removendo...'; }
       Promise.all(capped.map(function(s){
-        return withTokenFallback(camp._tk, function(tk){ return postForm(s.id, tk, { lifetime_spend_cap: 0 }); });
+        return withTokenFallback(camp._tk, function(tk){ return postForm(s.id, tk, { lifetime_spend_cap: '' }); });
       })).then(function(){
         camp._hasCap = false;
         (camp._adsets || []).forEach(function(s){ s.lifetime_spend_cap = null; });
