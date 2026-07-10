@@ -2044,9 +2044,10 @@
       var lb = document.getElementById('csug_'+i);
       if (lb) { lb.disabled = true; lb.textContent = 'Limitando...'; }
       Promise.all(actAd.map(function(s){
-        /* centavos; >= gasto vitalicio do conjunto (senao o Facebook rejeita) + fatia da folga (min 1 centavo). */
+        /* centavos; >= gasto vitalicio do conjunto (senao o Facebook rejeita) + fatia da folga (min 1 centavo).
+           capAdset repete com o minimo do Facebook se este valor ficar abaixo (dado defasado / ja passou do teto). */
         var capCents = Math.round((s._life || 0) * 100) + Math.max(1, Math.round(share * 100));
-        return withTokenFallback(camp._tk, function(tk){ return postForm(s.id, tk, { lifetime_spend_cap: capCents }); });
+        return capAdset(camp._tk, s.id, capCents);
       })).then(function(){
         camp._hasCap = true;
         setAppliedRule(camp.id, 'LIMITAR_GASTO', camp._sugAction);
@@ -2579,6 +2580,30 @@
       });
   }
 
+  /* Le o MINIMO que o Facebook exige quando recusa um lifetime_spend_cap baixo:
+     "...limite maximo de gasto deve ser de pelo menos US$92,92" -> 9292 centavos (+50 de margem).
+     Trata pt-BR (92,92 / 1.234,56) e en (92.92). Retorna 0 se nao achar. */
+  function metaMinCapCents(msg) {
+    msg = String(msg || '');
+    var m = msg.match(/pelo menos[^\d]*([\d.,]+)/i) || msg.match(/at least[^\d]*([\d.,]+)/i) || msg.match(/US?\$\s*([\d.,]+)/);
+    if (!m) return 0;
+    var num = m[1];
+    if (num.indexOf(',') >= 0) num = num.replace(/\./g, '').replace(',', '.'); /* pt-BR */
+    var v = parseFloat(num);
+    if (!isFinite(v) || v <= 0) return 0;
+    return Math.ceil(v * 100) + 50; /* +$0,50 de margem (o gasto cresce entre a leitura e o post) */
+  }
+  /* Aplica o limite (lifetime_spend_cap, em centavos) num conjunto. Se o Facebook recusar por estar
+     abaixo do minimo dele, LE o minimo da mensagem e REPETE com esse valor (resolve dado defasado /
+     campanha que ja passou do teto). */
+  function capAdset(prefTk, adId, cents) {
+    return withTokenFallback(prefTk, function(tk){ return postForm(adId, tk, { lifetime_spend_cap: cents }); })
+      .catch(function(e){
+        var mn = metaMinCapCents(e && e.message);
+        if (mn && mn > cents) return withTokenFallback(prefTk, function(tk){ return postForm(adId, tk, { lifetime_spend_cap: mn }); });
+        throw e;
+      });
+  }
   /* Ordena os tokens: o preferido (da campanha) primeiro, depois todos os outros. */
   function metaTokensOrdered(preferred) {
     var all = getTks(), out = [];
