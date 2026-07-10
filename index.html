@@ -349,7 +349,7 @@
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
-    limSpendTrigger: 130, limSpendCap: 140, // SEM venda: gasto >= 130 -> LIMITAR GASTO no conjunto (soft-stop), trava a campanha em 140 no dia. Substitui o pause por gasto.
+    limSpendTrigger: 106, limSpendCap: 140, // SEM venda: gasto >= 106 -> LIMITAR GASTO no conjunto (soft-stop). Meta forca teto ~1,33x o gasto, entao 106 x 1,33 ~= 140 (teto real). Substitui o pause por gasto.
     pauseRoas: 1.5, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS<1,5; >3 vd: pausa ROAS<=1,3; ROAS>1,7 e 3+ vd -> +20%. Reativa: ROAS>1,5
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
@@ -1268,11 +1268,14 @@
           var adsetsRes = res[res.length - 1];
           var adsets = (adsetsRes && adsetsRes.data) ? adsetsRes.data : [];
           var hasCap = false;
+          /* Teto >= orcamento total da campanha = "sem limite" (e assim que o botao Remover libera). */
+          var lbC = parseInt(c.lifetime_budget) || 0;
           adsets.forEach(function(s) {
             var life = 0;
             if (s.insights && s.insights.data && s.insights.data[0]) life = parseFloat(s.insights.data[0].spend) || 0;
             s._life = life;
-            if (s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0) hasCap = true;
+            var cap = (s.lifetime_spend_cap != null) ? +s.lifetime_spend_cap : 0;
+            if (cap > 0 && (lbC <= 0 || cap < lbC)) hasCap = true;
           });
           c._adsets = adsets;
           c._hasCap = hasCap; /* ao menos 1 conjunto com "Maximo total" setado = campanha limitada (soft-stop) */
@@ -2057,21 +2060,25 @@
       }).catch(function(e){ alert('Erro ao limitar: ' + (e && e.message ? e.message : '')); if (lb) { lb.disabled = false; lb.textContent = 'Limitar gasto'; } });
       return;
     }
-    /* REMOVER LIMITE: LIMPA o lifetime_spend_cap dos conjuntos (= DESMARCAR a opcao no Facebook) -> campanha volta a rodar.
-       IMPORTANTE: mandar 0 NAO funciona (o Facebook le como "teto de $0" e recusa: "precisa ser pelo menos $X").
-       O certo e mandar o campo VAZIO ('' = unset), que e o equivalente a desmarcar o checkbox de limite. */
+    /* REMOVER LIMITE -> campanha volta a rodar.
+       NAO da p/ "zerar": o Facebook le 0 (e '') como um TETO de $0 e recusa, exigindo um minimo
+       (~30% acima do que o conjunto ja gastou). Entao "remover" = subir o teto p/ o ORCAMENTO TOTAL
+       da campanha = sem limite na pratica (o conjunto nunca pode passar do orcamento da campanha).
+       O _hasCap ignora teto >= orcamento total, entao a campanha volta a ser tratada como "sem limite". */
     if (camp._sugSig === 'REMLIMITE') {
+      var lbCents = parseInt(camp.lifetime_budget) || 0;
+      var noCap = lbCents > 0 ? lbCents : 100000000; /* fallback: $1.000.000 */
       var capped = (camp._adsets || []).filter(function(s){ return s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0; });
       if (!capped.length) capped = (camp._adsets || []).filter(function(s){ return (s.effective_status||'').toUpperCase() === 'ACTIVE'; });
       if (!capped.length) { alert('Nenhum conjunto com limite para remover.'); return; }
-      if (!confirm('REMOVER o limite de gasto da campanha "' + camp.name + '"?\nEla volta a rodar sem teto. ' + capped.length + ' conjunto(s).')) return;
+      if (!confirm('REMOVER o limite de gasto da campanha "' + camp.name + '"?\nO teto sobe p/ o orcamento total ($' + Math.round(noCap/100).toLocaleString('pt-BR') + ') = sem limite na pratica. ' + capped.length + ' conjunto(s).')) return;
       var rb = document.getElementById('csug_'+i);
       if (rb) { rb.disabled = true; rb.textContent = 'Removendo...'; }
       Promise.all(capped.map(function(s){
-        return withTokenFallback(camp._tk, function(tk){ return postForm(s.id, tk, { lifetime_spend_cap: '' }); });
+        return capAdset(camp._tk, s.id, noCap);
       })).then(function(){
         camp._hasCap = false;
-        (camp._adsets || []).forEach(function(s){ s.lifetime_spend_cap = null; });
+        (camp._adsets || []).forEach(function(s){ s.lifetime_spend_cap = noCap; });
         setAppliedRule(camp.id, 'REMLIMITE', camp._sugAction);
         logRuleHist(camp, 'REMLIMITE', camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
         renderCBO();
