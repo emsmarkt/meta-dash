@@ -349,6 +349,7 @@
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
+    limSpendTrigger: 130, limSpendCap: 140, // SEM venda: gasto >= 130 -> LIMITAR GASTO no conjunto (soft-stop), trava a campanha em 140 no dia. Substitui o pause por gasto.
     pauseRoas: 1.5, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS<1,5; >3 vd: pausa ROAS<=1,3; ROAS>1,7 e 3+ vd -> +20%. Reativa: ROAS>1,5
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
@@ -1230,11 +1231,14 @@
         var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,cpc&time_range='+totalRange+'&access_token='+c._tk;
         /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
         var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
+        /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
+           p/ a regra de LIMITAR GASTO (soft-stop) e p/ detectar campanha ja limitada. */
+        var adsetsUrl = API+'/'+c.id+'/adsets?fields=id,effective_status,lifetime_spend_cap,insights.date_preset(maximum){spend}&limit=50&access_token='+c._tk;
         var calls = isLifetime
-          ? [fj(totalUrl), fj(adsUrl)]
+          ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
           : [fj(totalUrl),
              fj(API+'/'+c.id+'/insights?fields=spend,clicks,cpc&'+periodParam+'&access_token='+c._tk),
-             fj(adsUrl)];
+             fj(adsUrl), fj(adsetsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
           c._spend = t ? parseFloat(t.spend) : 0;
@@ -1260,7 +1264,19 @@
           c._adWithErr = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
           c._adPaused = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='PAUSED'||s==='ADSET_PAUSED'||s==='CAMPAIGN_PAUSED'; }).length;
           c._adsLoaded = true;
-        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; });
+          /* Conjuntos: guarda id, status, limite atual e gasto vitalicio (p/ LIMITAR/REMOVER limite). */
+          var adsetsRes = res[res.length - 1];
+          var adsets = (adsetsRes && adsetsRes.data) ? adsetsRes.data : [];
+          var hasCap = false;
+          adsets.forEach(function(s) {
+            var life = 0;
+            if (s.insights && s.insights.data && s.insights.data[0]) life = parseFloat(s.insights.data[0].spend) || 0;
+            s._life = life;
+            if (s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0) hasCap = true;
+          });
+          c._adsets = adsets;
+          c._hasCap = hasCap; /* ao menos 1 conjunto com "Maximo total" setado = campanha limitada (soft-stop) */
+        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; c._adsets=[]; c._hasCap=false; });
       })).then(nextBatch);
     }
     return nextBatch();
@@ -1574,8 +1590,15 @@
       if (sales >= 1 && roas > RULES.pauseRoas) return { action: 'ATIVAR (ROAS ' + roasFmt + ' > ' + pauseRoasTxt + ')', cls: 'd-good', target: null, newEnd: null, key: 'ATIVAR', sig: 'ATIVAR' };
       return { action: 'Pausada', cls: 'd-warn', target: null, newEnd: null, key: 'PAUSADA', sig: null };
     }
-    /* 0 VENDA: pausa por gasto (>=$100) ou CPC (>$4, 0 IC, >$60); senao Coletando. */
-    if (sales === 0 && sp >= RULES.cutNoSaleSpend) return { action: 'PAUSAR (0 venda, $' + Math.round(sp) + ' gastos)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
+    /* LIMITADA: campanha ATIVA com limite de gasto ("Maximo total") no conjunto = soft-stop (nao pausada).
+       Fora das regras normais. Voltou a vender -> REMOVER LIMITE (volta a rodar); senao fica parada (com botao manual de remover). */
+    if (camp._hasCap) {
+      if (sales >= 1) return { action: 'REMOVER LIMITE (vendeu — ROAS ' + roasFmt + ', ' + sales + ' venda)', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
+      return { action: 'Limite de gasto ativo (parada, sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
+    }
+    /* 0 VENDA: gasto >= limSpendTrigger($130) -> LIMITAR GASTO (soft-stop, trava em $140; SUBSTITUI o pause por gasto).
+       Mantem PAUSAR por CPC ruim (matar rapido); senao Coletando. */
+    if (sales === 0 && sp >= RULES.limSpendTrigger) return { action: 'LIMITAR GASTO (trava em $' + RULES.limSpendCap + ', $' + Math.round(sp) + ' hoje s/ venda)', cls: 'd-bad', target: null, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
     if (sales === 0 && ic === 0 && cpc > RULES.pauseCpc && sp > RULES.pauseSpend) return { action: 'PAUSAR (CPC ' + (isFinite(cpc) ? '$' + cpc.toFixed(2) : 'alto/0 cliques') + ', 0 venda/IC, $' + Math.round(sp) + ')', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
     if (sales === 0) return { action: 'Coletando (sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
     /* PAUSA por TIER de vendas: 1-3 vendas (<=pauseSalesBreak) pausa se ROAS < pauseRoas(1,5);
@@ -1982,6 +2005,51 @@
         .catch(function(e){ alert('Erro ao ativar: ' + (e && e.message ? e.message : '')); if (ab) { ab.disabled = false; ab.textContent = 'Ativar campanha'; } });
       return;
     }
+    /* LIMITAR GASTO: aplica "Maximo total" (lifetime_spend_cap) em cada conjunto ATIVO = soft-stop.
+       folga do dia = limSpendCap - gasto de hoje, dividida entre os conjuntos; cada um: gasto proprio + fatia.
+       Garante teto da campanha em ~$limSpendCap hoje SEM pausar (nao reseta aprendizado). */
+    if (camp._sugSig === 'LIMITAR_GASTO') {
+      var actAd = (camp._adsets || []).filter(function(s){ return (s.effective_status||'').toUpperCase() === 'ACTIVE'; });
+      if (!actAd.length) { alert('Nenhum conjunto ativo para limitar.'); return; }
+      var today = camp._periodSpend || 0;
+      var headroom = Math.max(0, RULES.limSpendCap - today);
+      var share = headroom / actAd.length;
+      if (!confirm('LIMITAR o gasto da campanha "' + camp.name + '"?\nTrava em ~$' + RULES.limSpendCap + ' hoje (sem venda), sem pausar. ' + actAd.length + ' conjunto(s).')) return;
+      var lb = document.getElementById('csug_'+i);
+      if (lb) { lb.disabled = true; lb.textContent = 'Limitando...'; }
+      Promise.all(actAd.map(function(s){
+        /* centavos; >= gasto vitalicio do conjunto (senao o Facebook rejeita) + fatia da folga (min 1 centavo). */
+        var capCents = Math.round((s._life || 0) * 100) + Math.max(1, Math.round(share * 100));
+        return withTokenFallback(camp._tk, function(tk){ return postForm(s.id, tk, { lifetime_spend_cap: capCents }); });
+      })).then(function(){
+        camp._hasCap = true;
+        setAppliedRule(camp.id, 'LIMITAR_GASTO', camp._sugAction);
+        logRuleHist(camp, 'LIMITAR_GASTO', camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
+        renderCBO();
+        if (curTab === 'hist') renderHist();
+      }).catch(function(e){ alert('Erro ao limitar: ' + (e && e.message ? e.message : '')); if (lb) { lb.disabled = false; lb.textContent = 'Limitar gasto'; } });
+      return;
+    }
+    /* REMOVER LIMITE: zera o lifetime_spend_cap dos conjuntos limitados -> campanha volta a rodar. */
+    if (camp._sugSig === 'REMLIMITE') {
+      var capped = (camp._adsets || []).filter(function(s){ return s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0; });
+      if (!capped.length) capped = (camp._adsets || []).filter(function(s){ return (s.effective_status||'').toUpperCase() === 'ACTIVE'; });
+      if (!capped.length) { alert('Nenhum conjunto com limite para remover.'); return; }
+      if (!confirm('REMOVER o limite de gasto da campanha "' + camp.name + '"?\nEla volta a rodar sem teto. ' + capped.length + ' conjunto(s).')) return;
+      var rb = document.getElementById('csug_'+i);
+      if (rb) { rb.disabled = true; rb.textContent = 'Removendo...'; }
+      Promise.all(capped.map(function(s){
+        return withTokenFallback(camp._tk, function(tk){ return postForm(s.id, tk, { lifetime_spend_cap: 0 }); });
+      })).then(function(){
+        camp._hasCap = false;
+        (camp._adsets || []).forEach(function(s){ s.lifetime_spend_cap = null; });
+        setAppliedRule(camp.id, 'REMLIMITE', camp._sugAction);
+        logRuleHist(camp, 'REMLIMITE', camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
+        renderCBO();
+        if (curTab === 'hist') renderHist();
+      }).catch(function(e){ alert('Erro ao remover limite: ' + (e && e.message ? e.message : '')); if (rb) { rb.disabled = false; rb.textContent = 'Remover limite de gasto'; } });
+      return;
+    }
     if (!camp._sugEnd) { alert('Sem sugestao aplicavel para esta campanha.'); return; }
     /* Marca como aplicada JA (otimista): assim a MESMA regra nao reaparece com botao,
        mesmo que a verificacao da data em CBO vitalicia nao bata exata. */
@@ -2119,6 +2187,14 @@
             /* ATIVAR: campanha pausada que vendeu com ROAS > 1,3 -> botao verde de ativar. */
             if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; ativada as '+hhmm(applied.t)+'</div>'; }
             else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#238636;border-color:#238636">Ativar campanha</button>'; }
+          } else if (rule.key === 'LIMITAR_GASTO') {
+            /* LIMITAR GASTO: soft-stop sem venda -> botao laranja de limitar o conjunto. */
+            if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limitada as '+hhmm(applied.t)+'</div>'; }
+            else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#f0883e;border-color:#f0883e">Limitar gasto</button>'; }
+          } else if (rule.key === 'REMLIMITE') {
+            /* REMOVER LIMITE: campanha limitada (voltou a vender ou remocao manual) -> botao verde. */
+            if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limite removido as '+hhmm(applied.t)+'</div>'; }
+            else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#238636;border-color:#238636">Remover limite de gasto</button>'; }
           } else if (rule.newEnd && sameApplied) {
             /* Mesma regra ja aplicada hoje -> mostra a hora, SEM botao. */
             sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; aplicada as '+hhmm(applied.t)+'</div>';
