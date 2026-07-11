@@ -2594,7 +2594,8 @@
   }
 
   /* Le o MINIMO que o Facebook exige quando recusa um lifetime_spend_cap baixo:
-     "...limite maximo de gasto deve ser de pelo menos US$92,92" -> 9292 centavos (+50 de margem).
+     "...limite maximo de gasto deve ser de pelo menos US$92,92" -> centavos com MARGEM (+3% e +$1),
+     porque o gasto do conjunto CRESCE entre a leitura e o post (campanha gastando rapido).
      Trata pt-BR (92,92 / 1.234,56) e en (92.92). Retorna 0 se nao achar. */
   function metaMinCapCents(msg) {
     msg = String(msg || '');
@@ -2604,18 +2605,21 @@
     if (num.indexOf(',') >= 0) num = num.replace(/\./g, '').replace(',', '.'); /* pt-BR */
     var v = parseFloat(num);
     if (!isFinite(v) || v <= 0) return 0;
-    return Math.ceil(v * 100) + 50; /* +$0,50 de margem (o gasto cresce entre a leitura e o post) */
+    return Math.ceil(v * 100 * 1.03) + 100; /* +3% e +$1 de folga p/ o gasto que cresce entre ler e aplicar */
   }
-  /* Aplica o limite (lifetime_spend_cap, em centavos) num conjunto. Se o Facebook recusar por estar
-     abaixo do minimo dele, LE o minimo da mensagem e REPETE com esse valor (resolve dado defasado /
-     campanha que ja passou do teto). */
+  /* Aplica o limite (lifetime_spend_cap, em centavos) num conjunto, usando SO o token da campanha
+     (evita erro de token morto). Se o Facebook recusar por estar abaixo do minimo, LE o minimo da
+     mensagem e REPETE com ele — ate 3x (o minimo sobe conforme o gasto cresce). */
   function capAdset(prefTk, adId, cents) {
-    return withTokenFallback(prefTk, function(tk){ return postForm(adId, tk, { lifetime_spend_cap: cents }); })
-      .catch(function(e){
-        var mn = metaMinCapCents(e && e.message);
-        if (mn && mn > cents) return withTokenFallback(prefTk, function(tk){ return postForm(adId, tk, { lifetime_spend_cap: mn }); });
-        throw e;
-      });
+    function attempt(v, n) {
+      return postForm(adId, prefTk, { lifetime_spend_cap: v })
+        .catch(function(e){
+          var mn = metaMinCapCents(e && e.message);
+          if (n < 3 && mn && mn > v) return attempt(mn, n + 1);
+          throw e;
+        });
+    }
+    return attempt(cents, 0);
   }
   /* Ordena os tokens: o preferido (da campanha) primeiro, depois todos os outros. */
   function metaTokensOrdered(preferred) {
