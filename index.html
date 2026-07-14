@@ -405,7 +405,7 @@
   function getWkUrl() { try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
   /* Notifica erro: mostra um TOAST vermelho no dash (fixo, com fechar) E envia pro Telegram (via worker /notify). */
   function notifyErr(context, msg) {
-    msg = String(msg || '').slice(0, 800);
+    msg = String(msg || '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 320);
     try {
       var wrap = document.getElementById('toastWrap');
       if (!wrap) { wrap = document.createElement('div'); wrap.id = 'toastWrap'; wrap.style.cssText = 'position:fixed;top:12px;right:12px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:min(92vw,420px)'; document.body.appendChild(wrap); }
@@ -2791,23 +2791,19 @@
         /* Campanha NAO mudou. Monta diagnostico claro com o motivo real. */
         if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#f85149'; btn.style.borderColor = '#f85149'; }
         setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 4000);
-        var head = 'Nao consegui mudar o RITMO da campanha "' + camp.name + '".\n'
-                 + 'Pedido: ' + wantDay.split('-').reverse().join('/')
-                 + ' | Meta manteve: ' + (campDay ? campDay.split('-').reverse().join('/') : 'desconhecida') + '\n';
-        if (campErr) head += '\nMOTIVO (Meta): ' + campErr + '\n';
-        else head += '\nO Meta aceitou a chamada mas nao alterou o stop_time da campanha (campanha vitalicia costuma travar a data quando esta perto do fim).\n';
-        if (setsMatch) head += '\nObs: os CONJUNTOS ficaram com ' + wantDay.split('-').reverse().join('/') + ', mas em CBO o ritmo segue o stop_time da CAMPANHA — por isso o diario nao muda.\n';
-        /* Detecta token/app invalido e da instrucao clara. */
-        var allTxt = (campErr || '') + ' ' + report.join(' ');
-        if (/application has been deleted|validating application|access token|session.*expired|OAuth|code 190/i.test(allTxt)) {
-          head += '\n>>> TOKEN INVALIDO: o app do Facebook desse token foi DELETADO (ou o token expirou). Gere um TOKEN NOVO (de um app valido) com acesso a esse Business Manager e troque em ⚙ Tokens. Sem isso, o conjunto dessa conta nao pode ser alterado.\n';
-        }
-        notifyErr('Falha ao aplicar em "' + camp.name + '"', head + '\n' + report.join('\n'));
+        /* Aviso CURTO: pedido, o que a Meta manteve e o MOTIVO principal (erro da campanha ou o 1o do conjunto). */
+        var reason = campErr || (setFails.length ? setFails[0].replace(/^[^:]*:\s*/, '').replace(/^Invalid parameter\s*-\s*/i, '') : 'Meta nao alterou o stop_time (campanha vitalicia trava a data perto do fim)');
+        reason = String(reason).replace(/\s+/g, ' ').slice(0, 160);
+        var tokenBad = /application has been deleted|validating application|access token|session.*expired|OAuth|code 190/i.test((campErr || '') + ' ' + report.join(' '));
+        notifyErr('Nao apliquei em "' + camp.name + '"',
+          'Pedido ' + wantDay.split('-').reverse().join('/') + ', Meta manteve ' + (campDay ? campDay.split('-').reverse().join('/') : '?')
+          + '. Conjuntos ' + setOk + '/' + setTotal + '. Motivo: ' + reason
+          + (tokenBad ? ' — TOKEN INVALIDO: gere um novo em Tokens.' : ''));
       })
       .catch(function(e) {
         if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#f85149'; btn.style.borderColor = '#f85149'; }
         setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 4000);
-        notifyErr('Erro ao aplicar em "' + camp.name + '"', (e && e.message ? e.message : e) + '\n' + report.join('\n') + '\nVerifique se o token tem permissao ads_management.');
+        notifyErr('Erro ao aplicar em "' + camp.name + '"', (e && e.message ? e.message : String(e)));
       });
   }
 
