@@ -408,7 +408,8 @@
      Se mudar o worker, troque so esta linha. (localStorage 'wk_url' ainda sobrescreve, se existir.) */
   var WK_URL_DEFAULT = 'https://meta-robo.emersondomarketing.workers.dev';
   function getWkUrl() { try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
-  /* Notifica erro: mostra um TOAST vermelho no dash (fixo, com fechar) E envia pro Telegram (via worker /notify). */
+  /* Notifica erro: mostra um TOAST vermelho no dash (fecha no x ou em 20s). NAO manda pro Telegram
+     (removido a pedido do usuario 11/07 — o erro fica so na tela). */
   function notifyErr(context, msg) {
     msg = String(msg || '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 320);
     try {
@@ -422,8 +423,6 @@
       wrap.appendChild(t);
       setTimeout(function(){ if (t.parentNode) t.remove(); }, 20000);
     } catch (e) {}
-    /* Telegram via worker (tem o token). Silencioso se falhar. */
-    try { var u = getWkUrl(); if (u) fetch(u + '/notify', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text: '❌ Dashboard — ' + context + '\n' + msg }) }).catch(function(){}); } catch (e) {}
   }
   /* Cambio R$->US$ p/ converter o custo do RedTrack (que vem em reais). */
   function getFx() { try { var v = parseFloat(localStorage.getItem('md_fx')); return (v && v > 0) ? v : 5.1; } catch(e) { return 5.1; } }
@@ -1291,16 +1290,20 @@
           /* Conjuntos: guarda id, status, limite atual e gasto vitalicio (p/ LIMITAR/REMOVER limite). */
           var adsetsRes = res[res.length - 1];
           var adsets = (adsetsRes && adsetsRes.data) ? adsetsRes.data : [];
-          var hasCap = false;
-          /* Teto >= orcamento total da campanha = "sem limite" (e assim que o botao Remover libera). */
-          var lbC = parseInt(c.lifetime_budget) || 0;
+          /* LIMITADA? Teste pelo GASTO, nao pelo orcamento. Um teto so LIMITA se estiver perto do que a
+             campanha ja gastou (o robo trava em ~1,33x o gasto). Teto muito acima do gasto = nao trava nada
+             (ex.: teto $20k numa campanha que gastou $4k). O teste antigo (cap < orcamento) dava falso
+             positivo quando o orcamento subia depois de um "remover limite". */
+          var sumCaps = 0, anyCap = false;
           adsets.forEach(function(s) {
             var life = 0;
             if (s.insights && s.insights.data && s.insights.data[0]) life = parseFloat(s.insights.data[0].spend) || 0;
             s._life = life;
             var cap = (s.lifetime_spend_cap != null) ? +s.lifetime_spend_cap : 0;
-            if (cap > 0 && (lbC <= 0 || cap < lbC)) hasCap = true;
+            if (cap > 0) { anyCap = true; sumCaps += cap / 100; }
           });
+          var campSpent = c._spend || 0; /* gasto vitalicio da campanha */
+          var hasCap = anyCap && sumCaps < Math.max(campSpent * 2, 20);
           c._adsets = adsets;
           c._hasCap = hasCap; /* ao menos 1 conjunto com "Maximo total" setado = campanha limitada (soft-stop) */
         }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; c._adsets=[]; c._hasCap=false; });
@@ -2317,7 +2320,7 @@
         '<td style="font-size:12px">'+roasTxt+'</td>' +
         '<td style="font-size:12px;color:#d2a20a;font-weight:600">'+diarioMeta+'</td>' +
         '<td><input class="cbo-inp" id="cdaily_'+i+'" type="number" min="1" step="any" placeholder="ex: 100"></td>' +
-        '<td id="sugcell_'+i+'" style="max-width:170px;white-space:normal;line-height:1.3">'+sugTxt+(((camp.effective_status||camp.status||'').toUpperCase()==='ACTIVE' && !camp._hasCap) ? '<button class="save-btn" id="climitbtn_'+i+'" title="Limita o gasto desta campanha no valor atual (soft-stop, sem pausar)" style="display:block;margin-top:6px;padding:3px 8px;font-size:10px;background:#f0883e;border-color:#f0883e">&#128679; Limitar gasto</button>' : '')+'</td>' +
+        '<td id="sugcell_'+i+'" style="max-width:170px;white-space:normal;line-height:1.3">'+sugTxt+(((camp.effective_status||camp.status||'').toUpperCase()==='ACTIVE') ? '<button class="save-btn" id="climitbtn_'+i+'" title="Limita o gasto desta campanha no valor atual (soft-stop, sem pausar). Sempre disponivel." style="display:block;margin-top:6px;padding:3px 8px;font-size:10px;background:#f0883e;border-color:#f0883e">&#128679; Limitar gasto</button>' : '')+'</td>' +
         '<td id="cdays_'+i+'" style="font-size:13px">'+initDays+'</td>' +
         '<td id="cend_'+i+'" style="font-size:12px;color:#c9d1d9">'+initEnd+'</td>' +
         '<td><input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'"></td>' +
