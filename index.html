@@ -349,8 +349,13 @@
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
-    limSpendTrigger: 106, limSpendCap: 140, // SEM venda: gasto >= 106 -> LIMITAR GASTO no conjunto (soft-stop). Meta forca teto ~1,33x o gasto, entao 106 x 1,33 ~= 140 (teto real). Substitui o pause por gasto.
-    limRoasFew: 1.4, limRoasMany: 1.35, // COM venda: ROAS <= isso -> LIMITAR. <=5 vendas: 1,4; >5 vendas: 1,35.
+    /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
+       Antes das 18h: dispara em 45 -> trava ~$60. A partir das 18h: dispara em 106 -> trava ~$140.
+       As 18h o robo SOBE o teto das ja limitadas sem venda ($60 -> $140). */
+    limHour: 18,
+    limTrigDay: 45, limCapDay: 60,
+    limTrigNight: 106, limCapNight: 140,
+    limRoas: 1.4, // COM venda: ROAS <= isso -> LIMITAR, INDEPENDENTE do nº de vendas.
     pauseCpc: 3, pauseSpend: 60, // SEM venda + CPC>$3 E 0 IC E gasto>$60 -> LIMITAR GASTO
     pauseRoas: 1.5, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS 1,4-1,5; ROAS>1,7 e 3+ vd -> +20%. Reativa: ROAS>1,5
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
@@ -1555,6 +1560,8 @@
   }
 
   /* ===== MOTOR DE REGRAS ===== */
+  /* Hora ATUAL no fuso BR (UTC-3), 0-23. Usada p/ o teto sem-venda por horario. */
+  function brHour() { return new Date(Date.now() - 3*3600*1000).getUTCHours(); }
   function brDatePlus(days) {
     var d = new Date(Date.now() - 3*3600*1000);
     d.setUTCDate(d.getUTCDate() + days);
@@ -1612,20 +1619,26 @@
       if (sales >= 1 && roas > RULES.pauseRoas) return { action: 'ATIVAR (ROAS ' + roasFmt + ' > ' + pauseRoasTxt + ')', cls: 'd-good', target: null, newEnd: null, key: 'ATIVAR', sig: 'ATIVAR' };
       return { action: 'Pausada', cls: 'd-warn', target: null, newEnd: null, key: 'PAUSADA', sig: null };
     }
+    /* Teto SEM venda por HORARIO (BR): antes das limHour(18h) -> limCapDay($60, dispara em $45);
+       a partir das 18h -> limCapNight($140, dispara em $106). */
+    var isNight = brHour() >= RULES.limHour;
+    var trigNS = isNight ? RULES.limTrigNight : RULES.limTrigDay;
+    var capNS = isNight ? RULES.limCapNight : RULES.limCapDay;
     /* LIMITADA: campanha ATIVA com limite de gasto ("Maximo total") no conjunto = soft-stop (nao pausada).
-       Fora das regras normais. Voltou a vender -> REMOVER LIMITE (volta a rodar); senao fica parada (com botao manual de remover). */
+       Voltou a vender -> REMOVER LIMITE (manual). Sem venda e ja passou das 18h com teto de dia -> SUBIR p/ $140. */
     if (camp._hasCap) {
       if (sales >= 1) return { action: 'REMOVER LIMITE (vendeu — ROAS ' + roasFmt + ', ' + sales + ' venda)', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
+      if (isNight && sp < RULES.limCapNight) return { action: 'SUBIR LIMITE p/ ~$' + RULES.limCapNight + ' (pos ' + RULES.limHour + 'h, s/ venda, $' + Math.round(sp) + ' hoje)', cls: 'd-warn', target: RULES.limCapNight, newEnd: null, key: 'SUBIR_LIMITE', sig: 'SUBIR_LIMITE' };
       return { action: 'Limite de gasto ativo (parada, sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
     }
-    /* 0 VENDA: gasto >= limSpendTrigger($106) -> LIMITAR GASTO (soft-stop, teto ~$140).
-       CPC ruim (>$4, 0 IC, >$60) -> so AVISO (nao pausa/limita mais); senao Coletando. */
-    if (sales === 0 && sp >= RULES.limSpendTrigger) return { action: 'LIMITAR GASTO (trava ~$' + RULES.limSpendCap + ', $' + Math.round(sp) + ' hoje s/ venda)', cls: 'd-bad', target: RULES.limSpendCap, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
+    /* 0 VENDA: gasto >= gatilho do horario -> LIMITAR GASTO (teto do horario: $60 ate 18h, $140 depois).
+       CPC ruim (>$3, 0 IC, >$60) -> LIMITAR no gasto de hoje; senao Coletando. */
+    if (sales === 0 && sp >= trigNS) return { action: 'LIMITAR GASTO (trava ~$' + capNS + ', ' + (isNight ? 'pos ' : 'ate ') + RULES.limHour + 'h, $' + Math.round(sp) + ' hoje s/ venda)', cls: 'd-bad', target: capNS, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
     if (sales === 0 && ic === 0 && cpc > RULES.pauseCpc && sp > RULES.pauseSpend) return { action: 'LIMITAR GASTO (CPC ' + (isFinite(cpc) ? '$' + cpc.toFixed(2) : 'alto/0 cliques') + ' s/ venda, $' + Math.round(sp) + ' hoje)', cls: 'd-bad', target: sp, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
     if (sales === 0) return { action: 'Coletando (sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
-    /* COM VENDA (nao pausa mais quando ROAS baixo): ROAS <= limRoas -> LIMITAR no GASTO DE HOJE.
-       limRoas = limRoasFew(1,4) ate 5 vendas; limRoasMany(1,35) acima de 5. 1-3 vendas com limRoas < ROAS < pauseRoas(1,5) -> PAUSAR (unica pausa; robo avisa aos ~50min). */
-    var limRoas = (sales > RULES.aumMaxSales) ? RULES.limRoasMany : RULES.limRoasFew;
+    /* COM VENDA: ROAS <= limRoas(1,4) -> LIMITAR no GASTO DE HOJE, INDEPENDENTE do nº de vendas.
+       1-3 vendas com 1,4 < ROAS < pauseRoas(1,5) -> PAUSAR (unica pausa; robo avisa aos ~50min). */
+    var limRoas = RULES.limRoas;
     var limRoasTxt = limRoas.toFixed(2).replace('.', ',');
     if (roas <= limRoas) return { action: 'LIMITAR GASTO no atual (ROAS ' + roasFmt + ' <= ' + limRoasTxt + ', ' + sales + ' vendas, $' + Math.round(sp) + ' hoje)', cls: 'd-bad', target: sp, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
     if (sales <= RULES.pauseSalesBreak && roas < RULES.pauseRoas) return { action: 'PAUSAR (ROAS ' + roasFmt + ' < ' + pauseRoasTxt + ', ' + sales + ' venda)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
@@ -2055,20 +2068,21 @@
         .catch(function(e){ notifyErr('Erro ao ATIVAR "' + camp.name + '"', e && e.message ? e.message : ''); if (ab) { ab.disabled = false; ab.textContent = 'Ativar campanha'; } });
       return;
     }
-    /* LIMITAR GASTO: aplica "Maximo total" (lifetime_spend_cap) em cada conjunto ATIVO = soft-stop.
-       folga do dia = limSpendCap - gasto de hoje, dividida entre os conjuntos; cada um: gasto proprio + fatia.
-       Garante teto da campanha em ~$limSpendCap hoje SEM pausar (nao reseta aprendizado). */
-    if (camp._sugSig === 'LIMITAR_GASTO') {
+    /* LIMITAR GASTO (soft-stop) e SUBIR_LIMITE (as 18h sobe o teto sem-venda de $60 -> $140).
+       folga = teto alvo - gasto de hoje, dividida entre os conjuntos; cada um: gasto proprio + fatia.
+       Trava a campanha em ~teto alvo hoje SEM pausar (nao reseta aprendizado). */
+    if (camp._sugSig === 'LIMITAR_GASTO' || camp._sugSig === 'SUBIR_LIMITE') {
       var actAd = (camp._adsets || []).filter(function(s){ return (s.effective_status||'').toUpperCase() === 'ACTIVE'; });
       if (!actAd.length) { alert('Nenhum conjunto ativo para limitar.'); return; }
       var today = camp._periodSpend || 0;
-      /* teto alvo = target da regra: sem venda -> limSpendCap($140); ROAS<=1,3 -> gasto de hoje (para no minimo da Meta). */
-      var limCap = (typeof camp._sugTarget === 'number' && camp._sugTarget > 0) ? camp._sugTarget : RULES.limSpendCap;
+      /* teto alvo = target da regra: sem venda -> teto do horario ($60 ate 18h / $140 depois); ROAS<=1,4 -> gasto de hoje. */
+      var isSubir = camp._sugSig === 'SUBIR_LIMITE';
+      var limCap = (typeof camp._sugTarget === 'number' && camp._sugTarget > 0) ? camp._sugTarget : RULES.limCapNight;
       var headroom = Math.max(0, limCap - today);
       var share = headroom / actAd.length;
-      if (!confirm('LIMITAR o gasto da campanha "' + camp.name + '"?\nTrava perto de $' + Math.round(Math.max(limCap, today)) + ' hoje, sem pausar. ' + actAd.length + ' conjunto(s).')) return;
+      if (!confirm((isSubir ? 'SUBIR o limite da campanha "' : 'LIMITAR o gasto da campanha "') + camp.name + '"?\nTrava perto de $' + Math.round(Math.max(limCap, today)) + ' hoje, sem pausar. ' + actAd.length + ' conjunto(s).')) return;
       var lb = document.getElementById('csug_'+i);
-      if (lb) { lb.disabled = true; lb.textContent = 'Limitando...'; }
+      if (lb) { lb.disabled = true; lb.textContent = isSubir ? 'Subindo...' : 'Limitando...'; }
       Promise.all(actAd.map(function(s){
         /* centavos; >= gasto vitalicio do conjunto (senao o Facebook rejeita) + fatia da folga (min 1 centavo).
            capAdset repete com o minimo do Facebook se este valor ficar abaixo (dado defasado / ja passou do teto). */
@@ -2076,11 +2090,11 @@
         return capAdset(camp._tk, s.id, capCents);
       })).then(function(){
         camp._hasCap = true;
-        setAppliedRule(camp.id, 'LIMITAR_GASTO', camp._sugAction);
-        logRuleHist(camp, 'LIMITAR_GASTO', camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
+        setAppliedRule(camp.id, camp._sugSig, camp._sugAction);
+        logRuleHist(camp, camp._sugSig, camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
         renderCBO();
         if (curTab === 'hist') renderHist();
-      }).catch(function(e){ notifyErr('Erro ao LIMITAR "' + camp.name + '"', e && e.message ? e.message : ''); if (lb) { lb.disabled = false; lb.textContent = 'Limitar gasto'; } });
+      }).catch(function(e){ notifyErr('Erro ao ' + (isSubir ? 'SUBIR LIMITE' : 'LIMITAR') + ' "' + camp.name + '"', e && e.message ? e.message : ''); if (lb) { lb.disabled = false; lb.textContent = isSubir ? 'Subir limite' : 'Limitar gasto'; } });
       return;
     }
     /* REMOVER LIMITE -> campanha volta a rodar.
@@ -2239,6 +2253,10 @@
             /* LIMITAR GASTO: soft-stop sem venda -> botao laranja de limitar o conjunto. */
             if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limitada as '+hhmm(applied.t)+'</div>'; }
             else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#f0883e;border-color:#f0883e">Limitar gasto</button>'; }
+          } else if (rule.key === 'SUBIR_LIMITE') {
+            /* SUBIR LIMITE: pos 18h, sobe o teto sem-venda de $60 -> $140 (robo faz sozinho; botao p/ manual). */
+            if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limite subido as '+hhmm(applied.t)+'</div>'; }
+            else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#d29922;border-color:#d29922">Subir limite</button>'; }
           } else if (rule.key === 'REMLIMITE') {
             /* REMOVER LIMITE: campanha limitada (voltou a vender ou remocao manual) -> botao verde. */
             if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limite removido as '+hhmm(applied.t)+'</div>'; }
