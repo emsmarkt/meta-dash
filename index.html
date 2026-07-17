@@ -1187,13 +1187,15 @@
           /* Contas/BMs a ignorar (ex: Effective 01 e Origin). */
           var an = (acc.name || '').toLowerCase();
           if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0) return null;
-          return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,lifetime_budget,stop_time,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
+          return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,lifetime_budget,daily_budget,stop_time,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
             list.filter(function(c) {
               var es = (c.effective_status || c.status || '').toUpperCase();
               if (es === 'DELETED' || es === 'ARCHIVED') return false; /* nao mostrar excluidas/arquivadas */
               var nu = (c.name || '').toUpperCase();
-              /* Inclui CBO + TESTE (p/ os filtros da aba). ABO tem aba propria. Exige orcamento no nivel da campanha. */
-              return !!c.name && (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0) && nu.indexOf('SUBSTITUIDA') < 0 && !!c.lifetime_budget;
+              /* Inclui CBO + TESTE (p/ os filtros da aba). ABO tem aba propria. Exige orcamento no nivel da CAMPANHA
+                 — vitalicio OU diario. As de orcamento DIARIO entram so p/ VISUALIZAR (sem regra; o worker tbm as
+                 ignora, pois exige lifetime_budget). */
+              return !!c.name && (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0) && nu.indexOf('SUBSTITUIDA') < 0 && (!!c.lifetime_budget || !!c.daily_budget);
             }).forEach(function(c) {
               c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; camps.push(c);
             });
@@ -1600,6 +1602,11 @@
        Retorno neutro (target/newEnd null) garante que nenhum botao de aplicar aparece. */
     if ((camp.name || '').toUpperCase().indexOf('TESTE') >= 0) {
       return { action: 'TESTE — fora das regras', cls: 'd-warn', target: null, newEnd: null, key: 'TESTE', sig: null };
+    }
+    /* CBO de ORCAMENTO DIARIO: mecanica diferente (nao tem saldo/termino; o diario E o proprio orcamento).
+       Entra so p/ VISUALIZAR — sem regra, sem botao. O robo tbm nao toca (ele exige lifetime_budget). */
+    if (!camp.lifetime_budget && camp.daily_budget) {
+      return { action: 'Orcamento DIARIO — so visualizacao (sem regra)', cls: 'd-warn', target: null, newEnd: null, key: 'DIARIO', sig: null };
     }
     var sp = camp._periodSpend || 0;
     var sales = (camp._conv ? camp._conv.sales : 0) || 0;
@@ -2166,9 +2173,11 @@
     var thL = document.getElementById('thLucro'); if (thL) thL.innerHTML = 'Lucro' + (cboSort.key==='profit'?arrow:' &#8645;');
     var thR = document.getElementById('thRoas'); if (thR) thR.innerHTML = 'ROAS' + (cboSort.key==='roas'?arrow:' &#8645;');
     var rowsHtml = cboData.map(function(camp, i) {
+      /* CBO de orcamento DIARIO: nao tem vitalicio/saldo/termino. So visualizacao (sem regra/botoes). */
+      var isDaily = !camp.lifetime_budget && !!camp.daily_budget;
       var lb = parseFloat(camp.lifetime_budget) / 100;
       var spent = camp._spend || 0;
-      var remaining = lb - spent;
+      var remaining = isDaily ? NaN : (lb - spent);
       var st = campStatusInfo(camp);
       var stBadge = '<span class="badge '+st.cls+'"'+(st.issue?(' title="'+st.issue.replace(/"/g,'&quot;')+'"'):'')+'>'+st.txt+(st.issue?' &#9888;':'')+'</span>';
       var curEnd = camp.stop_time ? (typeof camp.stop_time === 'number' ? new Date(camp.stop_time * 1000) : new Date(camp.stop_time)).toISOString().split('T')[0] : '';
@@ -2289,7 +2298,7 @@
         }
       }
       var diarioMeta = '---', initDays = '---', initEnd = '---';
-      if (camp.stop_time) {
+      if (camp.stop_time && !isDaily) { /* orcamento DIARIO nao tem ritmo por termino */
         var stopD = typeof camp.stop_time === 'number' ? new Date(camp.stop_time * 1000) : new Date(camp.stop_time);
         var todayD = new Date(); todayD.setHours(0,0,0,0);
         var dLeft = Math.ceil((stopD - todayD) / 86400000);
@@ -2308,9 +2317,9 @@
         '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
         '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
         '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:'+(st.noteCls==='ok'?'#8b949e':(st.noteCls==='warn'?'#d29922':'#f85149'))+';margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'<div style="margin-top:5px"><button class="tgl-btn '+(((camp.status||"").toUpperCase()==="ACTIVE")?"tgl-on":"tgl-off")+'" id="ctgl_'+i+'">'+(((camp.status||"").toUpperCase()==="ACTIVE")?"⏸ Pausar":"▶ Ativar")+'</button></div></td>' +
-        '<td style="font-size:12px">'+fmtUSD(lb)+'</td>' +
+        '<td style="font-size:12px">'+(isDaily ? (fmtUSD(parseFloat(camp.daily_budget)/100)+'<div style="font-size:10px;color:#d29922">di&#225;rio</div>') : fmtUSD(lb))+'</td>' +
         '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
-        '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+fmtUSD(remaining)+'</td>' +
+        '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+(isDaily ? '---' : fmtUSD(remaining))+'</td>' +
         '<td style="font-size:12px;border-left:1px solid #21262d">'+periodSpend+'</td>' +
         '<td style="font-size:12px">'+clicks+'</td>' +
         '<td style="font-size:12px">'+cpc+'</td>' +
@@ -2325,12 +2334,13 @@
         '<td style="font-size:12px">'+lucroTxt+'</td>' +
         '<td style="font-size:12px">'+roasTxt+'</td>' +
         '<td style="font-size:12px;color:#d2a20a;font-weight:600">'+diarioMeta+'</td>' +
-        '<td><input class="cbo-inp" id="cdaily_'+i+'" type="number" min="1" step="any" placeholder="ex: 100"></td>' +
-        '<td id="sugcell_'+i+'" style="max-width:170px;white-space:normal;line-height:1.3">'+sugTxt+(((camp.effective_status||camp.status||'').toUpperCase()==='ACTIVE') ? '<button class="save-btn" id="climitbtn_'+i+'" title="Limita o gasto desta campanha no valor atual (soft-stop, sem pausar). Sempre disponivel." style="display:block;margin-top:6px;padding:3px 8px;font-size:10px;background:#f0883e;border-color:#f0883e">&#128679; Limitar gasto</button>' : '')+'</td>' +
-        '<td id="cdays_'+i+'" style="font-size:13px">'+initDays+'</td>' +
-        '<td id="cend_'+i+'" style="font-size:12px;color:#c9d1d9">'+initEnd+'</td>' +
-        '<td><input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'"></td>' +
-        '<td><button class="save-btn" id="csavebtn_'+i+'">Aplicar</button></td>' +
+        /* Orcamento DIARIO: sem campo de diario desejado, sem botao de limitar/termino/aplicar (so visualizacao). */
+        '<td>'+(isDaily ? '' : '<input class="cbo-inp" id="cdaily_'+i+'" type="number" min="1" step="any" placeholder="ex: 100">')+'</td>' +
+        '<td id="sugcell_'+i+'" style="max-width:170px;white-space:normal;line-height:1.3">'+sugTxt+((!isDaily && (camp.effective_status||camp.status||'').toUpperCase()==='ACTIVE') ? '<button class="save-btn" id="climitbtn_'+i+'" title="Limita o gasto desta campanha no valor atual (soft-stop, sem pausar). Sempre disponivel." style="display:block;margin-top:6px;padding:3px 8px;font-size:10px;background:#f0883e;border-color:#f0883e">&#128679; Limitar gasto</button>' : '')+'</td>' +
+        '<td id="cdays_'+i+'" style="font-size:13px">'+(isDaily ? '---' : initDays)+'</td>' +
+        '<td id="cend_'+i+'" style="font-size:12px;color:#c9d1d9">'+(isDaily ? '---' : initEnd)+'</td>' +
+        '<td>'+(isDaily ? '' : '<input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'">')+'</td>' +
+        '<td>'+(isDaily ? '' : '<button class="save-btn" id="csavebtn_'+i+'">Aplicar</button>')+'</td>' +
         '</tr>';
     }).join('');
     /* Linha de TOTAIS — soma SO as campanhas do filtro atual (applyCboFilters recalcula). */
@@ -2719,6 +2729,60 @@
       });
   }
 
+  /* Aplica o end_time em TODOS os conjuntos da campanha, UM A UM (sequencial — em paralelo a Meta
+     estrangula e alguns POSTs falham), depois CONFERE lendo de volta e REPETE so nos que NAO pegaram
+     (ate 3 rodadas). Antes era 1 tentativa em paralelo: conjunto que falhava ficava pra tras em SILENCIO
+     (campanha ia p/ a data nova e o conjunto ficava na antiga -> encerrava sozinho). Devolve {total, ok, fails}. */
+  function applyEndToAdsets(campId, tk, endIso, wantDay, onTk) {
+    var st = { total: 0, ok: 0, fails: [] };
+    var useTk = tk;
+    var dayOf = function(v){ if (!v) return null; return (typeof v === 'string') ? v.slice(0,10) : new Date(v*1000).toISOString().split('T')[0]; };
+    function listSets() {
+      return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/adsets?fields=id,name,end_time&limit=200&access_token='+t); })
+        .then(function(r){ useTk = r.tk; if (onTk) onTk(useTk); return (r.result && r.result.data) || []; })
+        .catch(function(){ return []; });
+    }
+    function postOne(s) {
+      return withTokenFallback(useTk, function(t){ return postForm(s.id, t, { end_time: endIso }); })
+        .then(function(r){ useTk = r.tk; if (onTk) onTk(useTk); return null; })
+        .catch(function(e){ return (s.name || s.id) + ': ' + (e && e.message ? e.message : e); });
+    }
+    /* Uma rodada: le o estado atual e posta SEQUENCIAL so nos conjuntos que ainda nao estao na data. */
+    function round(n) {
+      return listSets().then(function(sets) {
+        if (!sets.length) return;
+        st.total = sets.length;
+        var pend = sets.filter(function(s){ return dayOf(s.end_time) !== wantDay; });
+        if (!pend.length) return; /* todos ja com a data certa */
+        var errs = [], i = 0;
+        function next() {
+          if (i >= pend.length) return Promise.resolve();
+          var s = pend[i++];
+          return postOne(s).then(function(err){ if (err) errs.push(err); return next(); });
+        }
+        return next().then(function(){
+          st.fails = errs;
+          if (n < 2) return round(n + 1); /* confere de novo e repete nos que faltaram */
+        });
+      });
+    }
+    return round(0).then(function(){
+      return listSets().then(function(sets){
+        if (sets.length) st.total = sets.length;
+        st.ok = sets.filter(function(s){ return dayOf(s.end_time) === wantDay; }).length;
+        /* Se sobrou conjunto fora da data e nenhum erro explicito, reporta o que a Meta manteve. */
+        if (st.ok < st.total) {
+          var known = st.fails.join(' ');
+          sets.forEach(function(s){
+            var d = dayOf(s.end_time);
+            if (d !== wantDay && known.indexOf(s.name || s.id) < 0) st.fails.push((s.name || s.id) + ': Meta manteve ' + (d || '?'));
+          });
+        }
+        return st;
+      });
+    });
+  }
+
   /* Botao MANUAL "Limitar gasto": trava a campanha no GASTO ATUAL (soft-stop, sem pausar), a qualquer hora.
      Manda ~gasto atual de cada conjunto; capAdset sobe pro minimo real da Meta (~+33%). */
   function limitNow(i) {
@@ -2784,18 +2848,12 @@
     withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, campParams); })
       .then(function(r){ useTk = r.tk; camp._tk = r.tk; report.push('Campanha (stop_time): OK' + (r.tk !== origTk ? ' (via token alternativo)' : '')); })
       .catch(function(e){ campErr = e.message; report.push('Campanha (stop_time): RECUSADO por todos os tokens -> ' + e.message); })
-      /* 2) CONJUNTOS (ad sets): lista com fallback de token, depois atualiza cada end_time (tambem com fallback). */
-      .then(function(){ return withTokenFallback(useTk, function(tk){ return fjThrow(API+'/'+camp.id+'/adsets?fields=id,name,end_time&limit=200&access_token='+tk); }); })
-      .then(function(r){ useTk = r.tk; return r.result; }, function(){ return null; })
-      .then(function(d){
-        var sets = (d && d.data) || [];
-        setTotal = sets.length;
-        if (!sets.length) { report.push('Conjuntos: nenhum retornado.'); return null; }
-        return Promise.all(sets.map(function(s){
-          return withTokenFallback(useTk, function(tk){ return postForm(s.id, tk, { end_time: endIso }); })
-            .then(function(r){ useTk = r.tk; setOk++; })
-            .catch(function(e){ setFails.push((s.name || s.id) + ': ' + e.message); });
-        }));
+      /* 2) CONJUNTOS: aplica UM A UM, CONFERE e REPETE nos que nao pegaram (ate 3 rodadas).
+            Antes era paralelo + 1 tentativa -> conjunto que falhava ficava na data antiga em silencio. */
+      .then(function(){ return applyEndToAdsets(camp.id, useTk, endIso, wantDay, function(t){ useTk = t; }); })
+      .then(function(st){
+        setTotal = st.total; setOk = st.ok; setFails = st.fails;
+        if (!setTotal) report.push('Conjuntos: nenhum retornado.');
       })
       /* 3) VERIFICA lendo campanha e conjuntos de novo (com fallback). */
       .then(function(){ return Promise.all([
@@ -2820,7 +2878,15 @@
           var _sigH = fromRule ? camp._sugSig : 'MANUAL';
           var _actH = fromRule ? camp._sugAction : ('Ajuste manual de termino' + (histDailyNew ? ' (~$' + Math.round(histDailyNew) + '/dia)' : ''));
           logRuleHist(camp, _sigH, _actH, { dailyOld: histDailyOld > 0 ? histDailyOld : null, dailyNew: histDailyNew, endOld: histEndOld, endNew: dateVal });
-          notifyOk('Aplicado em "' + camp.name + '"', 'Termino ' + dateVal.split('-').reverse().join('/') + (histDailyNew ? ' · diario ~$' + Math.round(histDailyNew) : '') + (histDailyOld > 0 && histDailyNew ? ' (era ~$' + Math.round(histDailyOld) + ')' : ''));
+          /* A campanha pegou a data. Mas se algum CONJUNTO ficou pra tras, isso e GRAVE (ele encerra sozinho)
+             -> avisa em VERMELHO com quais falharam, em vez de dizer "Aplicado" e esconder o problema. */
+          var _resumo = 'Termino ' + dateVal.split('-').reverse().join('/') + (histDailyNew ? ' · diario ~$' + Math.round(histDailyNew) : '') + (histDailyOld > 0 && histDailyNew ? ' (era ~$' + Math.round(histDailyOld) + ')' : '');
+          if (setTotal && setOk < setTotal) {
+            notifyErr('ATENCAO — so ' + setOk + '/' + setTotal + ' conjuntos pegaram a data em "' + camp.name + '"',
+              'A CAMPANHA foi p/ ' + dateVal.split('-').reverse().join('/') + ', mas conjunto(s) ficaram na data ANTIGA (vao encerrar sozinhos). ' + (setFails[0] || '') + ' Tente aplicar de novo.');
+          } else {
+            notifyOk('Aplicado em "' + camp.name + '"', _resumo + (setTotal ? ' · ' + setOk + '/' + setTotal + ' conjuntos' : ''));
+          }
           if (curTab === 'orc') renderOrc();
           if (curTab === 'hist') renderHist();
           var sc = document.getElementById('sugcell_'+i);
