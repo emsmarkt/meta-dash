@@ -1634,10 +1634,10 @@
     var trigNS = isNight ? RULES.limTrigNight : RULES.limTrigDay;
     var capNS = isNight ? RULES.limCapNight : RULES.limCapDay;
     /* LIMITADA: campanha ATIVA com limite de gasto ("Maximo total") no conjunto = soft-stop (nao pausada).
-       Voltou a vender -> REMOVER LIMITE (manual). Sem venda e ja passou das 18h com teto de dia -> SUBIR p/ $140. */
+       SEMPRE oferece REMOVER LIMITE (o robo e quem sobe o teto as 18h sozinho; aqui nao mostramos SUBIR
+       p/ nao roubar o lugar do botao de Remover — pedido do usuario 11/07). */
     if (camp._hasCap) {
       if (sales >= 1) return { action: 'REMOVER LIMITE (vendeu — ROAS ' + roasFmt + ', ' + sales + ' venda)', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
-      if (isNight && sp < RULES.limCapNight) return { action: 'SUBIR LIMITE p/ ~$' + RULES.limCapNight + ' (pos ' + RULES.limHour + 'h, s/ venda, $' + Math.round(sp) + ' hoje)', cls: 'd-warn', target: RULES.limCapNight, newEnd: null, key: 'SUBIR_LIMITE', sig: 'SUBIR_LIMITE' };
       return { action: 'Limite de gasto ativo (parada, sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
     }
     /* 0 VENDA: gasto >= gatilho do horario -> LIMITAR GASTO (teto do horario: $60 ate 18h, $140 depois).
@@ -2266,10 +2266,6 @@
             /* LIMITAR GASTO: soft-stop sem venda -> botao laranja de limitar o conjunto. */
             if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limitada as '+hhmm(applied.t)+'</div>'; }
             else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#f0883e;border-color:#f0883e">Limitar gasto</button>'; }
-          } else if (rule.key === 'SUBIR_LIMITE') {
-            /* SUBIR LIMITE: pos 18h, sobe o teto sem-venda de $60 -> $140 (robo faz sozinho; botao p/ manual). */
-            if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limite subido as '+hhmm(applied.t)+'</div>'; }
-            else { sugTxt += '<button class="save-btn" id="csug_'+i+'" style="margin-top:3px;padding:3px 8px;font-size:11px;background:#d29922;border-color:#d29922">Subir limite</button>'; }
           } else if (rule.key === 'REMLIMITE') {
             /* REMOVER LIMITE: campanha limitada (voltou a vender ou remocao manual) -> botao verde. */
             if (sameApplied) { sugTxt += '<div style="font-size:10px;color:#3fb950;margin-top:2px">&#10003; limite removido as '+hhmm(applied.t)+'</div>'; }
