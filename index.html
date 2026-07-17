@@ -408,22 +408,28 @@
      Se mudar o worker, troque so esta linha. (localStorage 'wk_url' ainda sobrescreve, se existir.) */
   var WK_URL_DEFAULT = 'https://meta-robo.emersondomarketing.workers.dev';
   function getWkUrl() { try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
-  /* Notifica erro: mostra um TOAST vermelho no dash (fecha no x ou em 20s). NAO manda pro Telegram
-     (removido a pedido do usuario 11/07 — o erro fica so na tela). */
-  function notifyErr(context, msg) {
+  /* TOAST no canto sup. direito. kind 'err' = vermelho (erro, some em 20s) | 'ok' = verde (sucesso, 8s).
+     Fecha no x tambem. NAO manda pro Telegram (removido a pedido do usuario 11/07). */
+  function showToast(kind, context, msg) {
     msg = String(msg || '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 320);
     try {
       var wrap = document.getElementById('toastWrap');
       if (!wrap) { wrap = document.createElement('div'); wrap.id = 'toastWrap'; wrap.style.cssText = 'position:fixed;top:12px;right:12px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:min(92vw,420px)'; document.body.appendChild(wrap); }
+      var isErr = kind === 'err';
+      var bg = isErr ? '#2d1214' : '#0f2417', bd = isErr ? '#f85149' : '#3fb950', fg = isErr ? '#ffb3ae' : '#9fe3b6';
+      var esc = function(x){ return String(x || '').replace(/</g, '&lt;'); };
       var t = document.createElement('div');
-      t.style.cssText = 'background:#2d1214;border:1px solid #f85149;color:#ffb3ae;border-radius:8px;padding:11px 34px 11px 12px;font-size:13px;line-height:1.5;box-shadow:0 6px 20px rgba(0,0,0,.5);position:relative;word-break:break-word';
-      t.innerHTML = '<b style="color:#f85149">&#10060; ' + String(context || 'Erro').replace(/</g, '&lt;') + '</b><br>' + msg.replace(/</g, '&lt;')
+      t.style.cssText = 'background:'+bg+';border:1px solid '+bd+';color:'+fg+';border-radius:8px;padding:11px 34px 11px 12px;font-size:13px;line-height:1.5;box-shadow:0 6px 20px rgba(0,0,0,.5);position:relative;word-break:break-word';
+      t.innerHTML = '<b style="color:'+bd+'">' + (isErr ? '&#10060; ' : '&#9989; ') + esc(context || (isErr ? 'Erro' : 'Feito')) + '</b>'
+        + (msg ? '<br>' + esc(msg) : '')
         + '<span style="position:absolute;top:6px;right:10px;cursor:pointer;color:#8b949e;font-size:16px">&times;</span>';
       t.querySelector('span').addEventListener('click', function(){ t.remove(); });
       wrap.appendChild(t);
-      setTimeout(function(){ if (t.parentNode) t.remove(); }, 20000);
+      setTimeout(function(){ if (t.parentNode) t.remove(); }, isErr ? 20000 : 8000);
     } catch (e) {}
   }
+  function notifyErr(context, msg) { showToast('err', context, msg); }
+  function notifyOk(context, msg) { showToast('ok', context, msg); }
   /* Cambio R$->US$ p/ converter o custo do RedTrack (que vem em reais). */
   function getFx() { try { var v = parseFloat(localStorage.getItem('md_fx')); return (v && v > 0) ? v : 5.1; } catch(e) { return 5.1; } }
   function saveFx(v) { try { v = parseFloat(v); if (v && v > 0) localStorage.setItem('md_fx', String(v)); } catch(e) {} }
@@ -2046,6 +2052,7 @@
       withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, { status: 'PAUSED' }); })
         .then(function(r){
           camp._tk = r.tk; camp.status = 'PAUSED'; camp.effective_status = 'PAUSED';
+          notifyOk('Campanha PAUSADA: "' + camp.name + '"', camp._sugAction || '');
           setAppliedRule(camp.id, 'PAUSAR', camp._sugAction);
           var cd = currentDailyOf(camp);
           logRuleHist(camp, 'PAUSAR', camp._sugAction, { dailyOld: cd > 0 ? cd : null, dailyNew: null, endOld: null, endNew: null });
@@ -2063,6 +2070,7 @@
       withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, { status: 'ACTIVE' }); })
         .then(function(r){
           camp._tk = r.tk; camp.status = 'ACTIVE'; camp.effective_status = 'ACTIVE';
+          notifyOk('Campanha ATIVADA: "' + camp.name + '"', camp._sugAction || '');
           setAppliedRule(camp.id, 'ATIVAR', camp._sugAction);
           logRuleHist(camp, 'ATIVAR', camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
           renderCBO();
@@ -2095,6 +2103,7 @@
         camp._hasCap = true;
         setAppliedRule(camp.id, camp._sugSig, camp._sugAction);
         logRuleHist(camp, camp._sugSig, camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
+        notifyOk((isSubir ? 'Limite SUBIDO em "' : 'Gasto LIMITADO em "') + camp.name + '"', actAd.length + ' conjunto(s) · teto ~$' + Math.round(Math.max(limCap, today)) + '. Sem pausar.');
         renderCBO();
         if (curTab === 'hist') renderHist();
       }).catch(function(e){ notifyErr('Erro ao ' + (isSubir ? 'SUBIR LIMITE' : 'LIMITAR') + ' "' + camp.name + '"', e && e.message ? e.message : ''); if (lb) { lb.disabled = false; lb.textContent = isSubir ? 'Subir limite' : 'Limitar gasto'; } });
@@ -2121,6 +2130,7 @@
         (camp._adsets || []).forEach(function(s){ s.lifetime_spend_cap = noCap; });
         setAppliedRule(camp.id, 'REMLIMITE', camp._sugAction);
         logRuleHist(camp, 'REMLIMITE', camp._sugAction, { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
+        notifyOk('Limite REMOVIDO de "' + camp.name + '"', capped.length + ' conjunto(s) liberado(s) — a campanha volta a rodar sem teto.');
         renderCBO();
         if (curTab === 'hist') renderHist();
       }).catch(function(e){ notifyErr('Erro ao REMOVER LIMITE "' + camp.name + '"', e && e.message ? e.message : ''); if (rb) { rb.disabled = false; rb.textContent = 'Remover limite de gasto'; } });
@@ -2327,44 +2337,8 @@
         '<td><button class="save-btn" id="csavebtn_'+i+'">Aplicar</button></td>' +
         '</tr>';
     }).join('');
-    /* Linha de TOTAIS no final somando as metricas */
-    var T = { lb:0, spent:0, rem:0, sp:0, clk:0, sales:0, ics:0, fat:0, lucro:0 };
-    cboData.forEach(function(c) {
-      var lbv = parseFloat(c.lifetime_budget)/100 || 0;
-      var spentv = c._spend || 0;
-      T.lb += lbv; T.spent += spentv; T.rem += (lbv - spentv);
-      T.sp += c._periodSpend || 0; T.clk += c._clicks || 0;
-      var sv = (hasC && c._conv) ? (c._conv.sales||0) : 0;
-      var iv = (hasC && c._conv) ? (c._conv.ic||0) : 0;
-      T.sales += sv; T.ics += iv; T.fat += sv*260; T.lucro += (sv*260 - (c._periodSpend||0));
-    });
-    var tPct = function(n,d){ return d>0 ? (n/d*100).toFixed(1).replace('.',',')+'%' : '---'; };
-    var tCPC = T.clk>0 ? fmtUSD(T.sp/T.clk) : '---';
-    var tCPA = T.sales>0 ? fmtUSD(T.sp/T.sales) : '---';
-    var tCPI = T.ics>0 ? fmtUSD(T.sp/T.ics) : '---';
-    var tRoas = T.sp>0 ? (T.fat/T.sp) : 0;
-    var totalsRow = '<tr style="background:#0d1117;font-weight:600;border-top:2px solid #30363d">' +
-      '<td style="color:#f0f6fc">TOTAL ('+cboData.length+' camp.)</td>' +
-      '<td></td><td></td>' +
-      '<td style="color:#f0f6fc">'+fmtUSD(T.lb)+'</td>' +
-      '<td style="color:#8b949e">'+fmtUSD(T.spent)+'</td>' +
-      '<td style="color:#58a6ff">'+fmtUSD(T.rem)+'</td>' +
-      '<td style="border-left:1px solid #21262d;color:#f0f6fc">'+fmtUSD(T.sp)+'</td>' +
-      '<td>'+(T.clk>0?T.clk.toLocaleString('pt-BR'):'---')+'</td>' +
-      '<td>'+tCPC+'</td>' +
-      '<td style="border-left:1px solid #21262d;color:#f0f6fc">'+(hasC?T.sales:'---')+'</td>' +
-      '<td>'+(hasC?tCPA:'---')+'</td>' +
-      '<td>'+(hasC?T.ics:'---')+'</td>' +
-      '<td>'+(hasC?tCPI:'---')+'</td>' +
-      '<td>'+(hasC?tPct(T.sales,T.clk):'---')+'</td>' +
-      '<td>'+(hasC?tPct(T.sales,T.ics):'---')+'</td>' +
-      '<td>'+(hasC?tPct(T.ics,T.clk):'---')+'</td>' +
-      '<td style="color:#3fb950">'+(hasC&&T.fat>0?fmtUSD(T.fat):'---')+'</td>' +
-      '<td>'+(hasC?'<span class="'+(T.lucro>=0?'d-good':'d-bad')+'">'+fmtUSD(T.lucro)+'</span>':'---')+'</td>' +
-      '<td>'+(hasC&&tRoas>0?'<span class="'+(tRoas>=1.4?'d-good':(tRoas>=1.2?'d-warn':'d-bad'))+'">'+tRoas.toFixed(2).replace('.',',')+'</span>':'---')+'</td>' +
-      '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
-      '</tr>';
-    document.getElementById('cboTbody').innerHTML = rowsHtml + totalsRow;
+    /* Linha de TOTAIS — soma SO as campanhas do filtro atual (applyCboFilters recalcula). */
+    document.getElementById('cboTbody').innerHTML = rowsHtml + cboTotalsHtml(cboData);
     cboData.forEach(function(camp, i) {
       var inp = document.getElementById('cdaily_'+i);
       if (inp) inp.addEventListener('input', function() { calcCBORow(i, 'daily'); });
@@ -2398,9 +2372,52 @@
     applyCboFilters();
   }
 
+  /* Linha de TOTAIS da aba CBO. Soma SO a lista passada -> respeita o filtro (Ativas/Pausadas/busca...). */
+  function cboTotalsHtml(list) {
+    var hasC = hasConv();
+    var T = { lb:0, spent:0, rem:0, sp:0, clk:0, sales:0, ics:0, fat:0, lucro:0 };
+    (list || []).forEach(function(c) {
+      var lbv = parseFloat(c.lifetime_budget)/100 || 0;
+      var spentv = c._spend || 0;
+      T.lb += lbv; T.spent += spentv; T.rem += (lbv - spentv);
+      T.sp += c._periodSpend || 0; T.clk += c._clicks || 0;
+      var sv = (hasC && c._conv) ? (c._conv.sales||0) : 0;
+      var iv = (hasC && c._conv) ? (c._conv.ic||0) : 0;
+      T.sales += sv; T.ics += iv; T.fat += sv*260; T.lucro += (sv*260 - (c._periodSpend||0));
+    });
+    var tPct = function(n,d){ return d>0 ? (n/d*100).toFixed(1).replace('.',',')+'%' : '---'; };
+    var tCPC = T.clk>0 ? fmtUSD(T.sp/T.clk) : '---';
+    var tCPA = T.sales>0 ? fmtUSD(T.sp/T.sales) : '---';
+    var tCPI = T.ics>0 ? fmtUSD(T.sp/T.ics) : '---';
+    var tRoas = T.sp>0 ? (T.fat/T.sp) : 0;
+    var n = (list || []).length;
+    return '<tr id="cboTotals" style="background:#0d1117;font-weight:600;border-top:2px solid #30363d">' +
+      '<td style="color:#f0f6fc">TOTAL ('+n+' camp.)</td>' +
+      '<td></td><td></td>' +
+      '<td style="color:#f0f6fc">'+fmtUSD(T.lb)+'</td>' +
+      '<td style="color:#8b949e">'+fmtUSD(T.spent)+'</td>' +
+      '<td style="color:#58a6ff">'+fmtUSD(T.rem)+'</td>' +
+      '<td style="border-left:1px solid #21262d;color:#f0f6fc">'+fmtUSD(T.sp)+'</td>' +
+      '<td>'+(T.clk>0?T.clk.toLocaleString('pt-BR'):'---')+'</td>' +
+      '<td>'+tCPC+'</td>' +
+      '<td style="border-left:1px solid #21262d;color:#f0f6fc">'+(hasC?T.sales:'---')+'</td>' +
+      '<td>'+(hasC?tCPA:'---')+'</td>' +
+      '<td>'+(hasC?T.ics:'---')+'</td>' +
+      '<td>'+(hasC?tCPI:'---')+'</td>' +
+      '<td>'+(hasC?tPct(T.sales,T.clk):'---')+'</td>' +
+      '<td>'+(hasC?tPct(T.sales,T.ics):'---')+'</td>' +
+      '<td>'+(hasC?tPct(T.ics,T.clk):'---')+'</td>' +
+      '<td style="color:#3fb950">'+(hasC&&T.fat>0?fmtUSD(T.fat):'---')+'</td>' +
+      '<td>'+(hasC?'<span class="'+(T.lucro>=0?'d-good':'d-bad')+'">'+fmtUSD(T.lucro)+'</span>':'---')+'</td>' +
+      '<td>'+(hasC&&tRoas>0?'<span class="'+(tRoas>=1.4?'d-good':(tRoas>=1.2?'d-warn':'d-bad'))+'">'+tRoas.toFixed(2).replace('.',',')+'</span>':'---')+'</td>' +
+      '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
+      '</tr>';
+  }
+
   function applyCboFilters() {
     var srchEl = document.getElementById('cboSrch');
     var q = srchEl ? srchEl.value.toLowerCase().trim() : '';
+    var vis = [];
     document.querySelectorAll('#cboTbody tr[data-name]').forEach(function(tr) {
       var nm = tr.getAttribute('data-name') || '';
       var st = tr.getAttribute('data-status') || '';
@@ -2412,8 +2429,13 @@
       else if (cboStatus === 'teste') okStatus = nm.indexOf('teste') >= 0;
       else if (cboStatus === 'abo') okStatus = nm.indexOf('abo') >= 0;
       else okStatus = (st === cboStatus);
-      tr.style.display = (okName && okStatus) ? '' : 'none';
+      var ok = okName && okStatus;
+      tr.style.display = ok ? '' : 'none';
+      if (ok) { var idx = parseInt(tr.getAttribute('data-cbo')); if (!isNaN(idx) && cboData[idx]) vis.push(cboData[idx]); }
     });
+    /* TOTAL passa a somar SO o que esta visivel no filtro. */
+    var tot = document.getElementById('cboTotals');
+    if (tot) tot.outerHTML = cboTotalsHtml(vis);
   }
 
   /* ── Posicionamento robusto do tooltip de vendas (Problema 1) ──
@@ -2721,6 +2743,7 @@
       actAd.forEach(function(s){ s.lifetime_spend_cap = String(Math.round((s._life || 0) * 100) + 1); });
       setAppliedRule(camp.id, 'LIMITAR_GASTO', 'Limite manual no gasto atual');
       logRuleHist(camp, 'LIMITAR_GASTO', 'Limitar gasto no atual (~$' + Math.round(today) + ', manual)', { dailyOld: histDailyOld > 0 ? histDailyOld : null, dailyNew: null, endOld: null, endNew: null });
+      notifyOk('Gasto LIMITADO em "' + camp.name + '"', actAd.length + ' conjunto(s) travado(s) no gasto atual (~$' + Math.round(today) + '). Sem pausar. A Meta trava no minimo dela (~+33%).');
       renderCBO();
       if (curTab === 'hist') renderHist();
     }).catch(function(e){ notifyErr('Erro ao LIMITAR (manual) "' + camp.name + '"', e && e.message ? e.message : ''); if (lbtn) { lbtn.disabled = false; lbtn.textContent = 'Limitar gasto'; } });
@@ -2801,6 +2824,7 @@
           var _sigH = fromRule ? camp._sugSig : 'MANUAL';
           var _actH = fromRule ? camp._sugAction : ('Ajuste manual de termino' + (histDailyNew ? ' (~$' + Math.round(histDailyNew) + '/dia)' : ''));
           logRuleHist(camp, _sigH, _actH, { dailyOld: histDailyOld > 0 ? histDailyOld : null, dailyNew: histDailyNew, endOld: histEndOld, endNew: dateVal });
+          notifyOk('Aplicado em "' + camp.name + '"', 'Termino ' + dateVal.split('-').reverse().join('/') + (histDailyNew ? ' · diario ~$' + Math.round(histDailyNew) : '') + (histDailyOld > 0 && histDailyNew ? ' (era ~$' + Math.round(histDailyOld) + ')' : ''));
           if (curTab === 'orc') renderOrc();
           if (curTab === 'hist') renderHist();
           var sc = document.getElementById('sugcell_'+i);
