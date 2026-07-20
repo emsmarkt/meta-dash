@@ -356,6 +356,7 @@
     limSpendTrigger: 90, limSpendCap: 120,
     limRoas: 1.4, // COM venda: ROAS <= isso -> LIMITAR, INDEPENDENTE do nº de vendas.
     limMinSpend: 1, // SO limita por ROAS se gasto > isso. Evita o falso ROAS 0 na virada (venda antes do gasto).
+    remLimRoas: 1.5, remLimStart: 10, remLimEnd: 23, // robo REMOVE o limite sozinho se ROAS > 1,5 entre 10h e 23h BR.
     pauseCpc: 3, pauseSpend: 60, // SEM venda + CPC>$3 E 0 IC E gasto>$60 -> LIMITAR GASTO
     pauseRoas: 1.5, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS 1,4-1,5; ROAS>1,7 e 3+ vd -> +20%. Reativa: ROAS>1,5
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
@@ -1635,8 +1636,12 @@
       if (sales >= 1 && roas > RULES.pauseRoas) return { action: 'ATIVAR (ROAS ' + roasFmt + ' > ' + pauseRoasTxt + ')', cls: 'd-good', target: null, newEnd: null, key: 'ATIVAR', sig: 'ATIVAR' };
       return { action: 'Pausada', cls: 'd-warn', target: null, newEnd: null, key: 'PAUSADA', sig: null };
     }
-    /* LIMITADA: campanha ATIVA com limite de gasto no conjunto = soft-stop. SEMPRE oferece REMOVER LIMITE. */
+    /* LIMITADA: campanha ATIVA com limite de gasto no conjunto = soft-stop. SEMPRE oferece REMOVER LIMITE (botao).
+       Se recuperou (ROAS>remLimRoas 1,5) na janela (3h-23h), o ROBÔ remove sozinho — mostra AUTO no rotulo. */
     if (camp._hasCap) {
+      var hNowD = brHour();
+      var remWinD = hNowD >= RULES.remLimStart && hNowD < RULES.remLimEnd;
+      if (roas > RULES.remLimRoas && remWinD) return { action: 'REMOVER LIMITE AUTO (recuperou — ROAS ' + roasFmt + ' > ' + RULES.remLimRoas.toFixed(1).replace('.', ',') + ')', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
       if (sales >= 1) return { action: 'REMOVER LIMITE (vendeu — ROAS ' + roasFmt + ', ' + sales + ' venda)', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
       return { action: 'Limite de gasto ativo (parada, sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
     }
