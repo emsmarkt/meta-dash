@@ -352,8 +352,8 @@
     /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
        Antes das 18h: dispara em 45 -> trava ~$60. A partir das 18h: dispara em 106 -> trava ~$140.
        As 18h o robo SOBE o teto das ja limitadas sem venda ($60 -> $140). */
-    /* SEM venda: gasto >= limSpendTrigger($75) -> LIMITAR, trava ~$100 o DIA INTEIRO (75 x 1,33 ~= 100). */
-    limSpendTrigger: 75, limSpendCap: 100,
+    /* SEM venda: gasto >= limSpendTrigger($90) -> LIMITAR, trava ~$120 o DIA INTEIRO (90 x 1,33 ~= 120). */
+    limSpendTrigger: 90, limSpendCap: 120,
     limRoas: 1.4, // COM venda: ROAS <= isso -> LIMITAR, INDEPENDENTE do nº de vendas.
     limMinSpend: 1, // SO limita por ROAS se gasto > isso. Evita o falso ROAS 0 na virada (venda antes do gasto).
     pauseCpc: 3, pauseSpend: 60, // SEM venda + CPC>$3 E 0 IC E gasto>$60 -> LIMITAR GASTO
