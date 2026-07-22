@@ -366,6 +366,8 @@
     aumPctLow: 0.30,     // +30% no ROAS 1.5 ...
     aumPctHigh: 0.70,    // ... ate +70% no ROAS 1.9. Diario = vendas x cpaTarget x (1+%)
     aumMaxSales: 5,      // a faixa 1.5-1.9 SO vale p/ campanhas com ATE 5 vendas. Mais de 5 vendas (ja tem volume) = MANTER, nunca reduz por essa regra
+    /* AUMENTAR (so SUGESTAO): so DEPOIS de aumHourBR(20h) BR, ROAS de HOJE >= pauseRoas(1,5) E ROAS dos ult. 7 dias > aumRoas7dMin(1,4) -> subir o diario p/ aumMult(1,5)x o atual. */
+    aumHourBR: 20, aumRoas7dMin: 1.4, aumMult: 1.5,
 
     scaleMult: 12,       // multiplicador de escala (agressivo: 12x o GASTO de hoje). Range util 10-15
     scaleUsePct: 0.2,    // SO escala/libera se gasto de hoje >= isso do diario atual
@@ -943,6 +945,35 @@
       });
   }
 
+  /* ── ROAS dos ULTIMOS 7 DIAS por campanha (RedTrack group=sub3) — so p/ a sugestao AUMENTAR ── */
+  function fetchRoas7d(camps) {
+    camps.forEach(function(c){ c._roas7d = 0; });
+    var tk = getRtTk();
+    if (!tk) return Promise.resolve();
+    var until = brDatePlus(0), since = brDatePlus(-6); /* 7 dias incluindo hoje */
+    var pType = getRtPType() || '1';
+    var fx = getFx();
+    var url = RT_API + '/report?api_key=' + encodeURIComponent(tk) + '&group=sub3&date_from=' + since + '&date_to=' + until + '&per=1000';
+    return fetch(url, { headers: {'Accept':'application/json'} })
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        var rows = d.items || d.data || d.report || (Array.isArray(d) ? d : []);
+        if (!Array.isArray(rows)) return;
+        var by = {};
+        rows.forEach(function(row) {
+          if (row.sub3 == null || row.sub3 === '') return;
+          var sales = parseInt(row['convtype'+pType]) || parseInt(row.approved) || 0;
+          var cost = 0; ['cost','total_cost','spend','ad_cost'].forEach(function(k){ if (!cost && row[k]!=null && row[k]!=='') cost = parseFloat(row[k])||0; });
+          by[String(row.sub3)] = { sales: sales, cost: cost };
+        });
+        camps.forEach(function(c) {
+          var v = by[String(c.id)];
+          if (v && v.cost > 0) { var spUsd = v.cost / fx; c._roas7d = spUsd > 0 ? (v.sales*260)/spUsd : 0; }
+        });
+      })
+      .catch(function(){});
+  }
+
   /* ── Horarios exatos das vendas (RedTrack /conversions) ──
      Busca conversoes individuais do periodo, filtra so VENDAS (type==Purchase) e
      agrupa os timestamps por sub3 (=campaign_id do Meta). Anexa em c._conv.saleTimes
@@ -1240,6 +1271,9 @@
         }).then(function() {
           /* Custo por hora p/ ROAS acumulado por venda no tooltip. So em periodo de 1 dia. */
           return fetchSaleHourCost(camps);
+        }).then(function() {
+          /* ROAS dos ult. 7 dias por campanha (p/ a sugestao AUMENTAR). Defensivo: se falhar, segue. */
+          return fetchRoas7d(camps).catch(function(){});
         }).then(function() {
           /* GASTO pelo RedTrack (mesma fonte e fuso das vendas). O custo do RedTrack vem em R$;
              converte p/ US$ pelo cambio. Se a campanha nao casou no RedTrack, mantem o gasto do Meta. */
@@ -1617,14 +1651,9 @@
     var target = null, action = '', cls = 'd-warn', key = '';
     var roasFmt = roas.toFixed(2).replace('.', ',');                       /* ROAS de hoje */
     var metaRoasTxt = (260 / RULES.cpaTarget).toFixed(1).replace('.', ','); /* meta de ROAS (ex: 1,5) */
-    /* PISO de ROAS p/ "ganhar" (so no ramo de ATE 5 vendas): accBase(1,5) por padrao;
-       accGood(1,35) em dia BOM com >2 vendas. Acima do piso = vencedora; entre 1,3 e o piso = LIMITAR;
-       abaixo de 1,3 = CORTAR. */
-    var minAcc = (mood === 'good' && sales > RULES.accGoodMinSales) ? RULES.accGood : RULES.accBase;
-    var minAccTxt = minAcc.toFixed(2).replace('.', ',');
-    var cutFloor = RULES.minRoas; /* 1.3 fixo, independente do dia/vendas */
-    var minRoasTxt = cutFloor.toFixed(1).replace('.', ',');
-    /* CORTAR = empurra o termino p/ daqui cutDays (364). O diario vira saldo/364 (bem baixo). */
+    /* CORTAR = REDUZIR RITMO: empurra o termino p/ daqui cutDays (364 ~ 1 ano). O diario vira saldo/364.
+       Freio GENTIL, sem catch-up/dump (o antigo limite de gasto foi APOSENTADO). */
+    var cortarEnd = brDatePlus(RULES.cutDays);
     var cortarTarget = rem > 0 ? (rem / RULES.cutDays) : RULES.floorDaily;
     var curDaily = currentDailyOf(camp); /* ritmo diario atual: ESCALAR/AUMENTAR NUNCA pode reduzir isso */
     var clk = camp._clicks || 0, ic = (camp._conv ? camp._conv.ic : 0) || 0;
@@ -1636,35 +1665,32 @@
       if (sales >= 1 && roas > RULES.pauseRoas) return { action: 'ATIVAR (ROAS ' + roasFmt + ' > ' + pauseRoasTxt + ')', cls: 'd-good', target: null, newEnd: null, key: 'ATIVAR', sig: 'ATIVAR' };
       return { action: 'Pausada', cls: 'd-warn', target: null, newEnd: null, key: 'PAUSADA', sig: null };
     }
-    /* LIMITADA: campanha ATIVA com limite de gasto no conjunto = soft-stop. SEMPRE oferece REMOVER LIMITE (botao).
-       Se recuperou (ROAS>remLimRoas 1,5) na janela (3h-23h), o ROBÔ remove sozinho — mostra AUTO no rotulo. */
+    /* LEGADO: o mecanismo de LIMITE DE GASTO foi APOSENTADO. Se a campanha ainda tiver cap (era antiga),
+       oferece REMOVER LIMITE p/ ela voltar a rodar sob o lever de termino. */
     if (camp._hasCap) {
-      var hNowD = brHour();
-      var remWinD = hNowD >= RULES.remLimStart && hNowD < RULES.remLimEnd;
-      if (roas > RULES.remLimRoas && remWinD) return { action: 'REMOVER LIMITE AUTO (recuperou — ROAS ' + roasFmt + ' > ' + RULES.remLimRoas.toFixed(1).replace('.', ',') + ')', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
-      if (sales >= 1) return { action: 'REMOVER LIMITE (vendeu — ROAS ' + roasFmt + ', ' + sales + ' venda)', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
-      return { action: 'Limite de gasto ativo (parada, sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
+      return { action: 'REMOVER LIMITE (mecanismo aposentado — de volta ao termino)', cls: 'd-good', target: null, newEnd: null, key: 'REMLIMITE', sig: 'REMLIMITE' };
     }
-    /* 0 VENDA: gasto >= limSpendTrigger($75) -> LIMITAR GASTO (trava ~$100 o dia inteiro).
-       CPC ruim (>$3, 0 IC, >$60) -> LIMITAR no gasto de hoje; senao Coletando. */
-    if (sales === 0 && sp >= RULES.limSpendTrigger) return { action: 'LIMITAR GASTO (trava ~$' + RULES.limSpendCap + ', $' + Math.round(sp) + ' hoje s/ venda)', cls: 'd-bad', target: RULES.limSpendCap, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
-    if (sales === 0 && ic === 0 && cpc > RULES.pauseCpc && sp > RULES.pauseSpend) return { action: 'LIMITAR GASTO (CPC ' + (isFinite(cpc) ? '$' + cpc.toFixed(2) : 'alto/0 cliques') + ' s/ venda, $' + Math.round(sp) + ' hoje)', cls: 'd-bad', target: sp, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
+    /* AUMENTAR (so SUGESTAO): so em campanha com MENOS de aumMaxSales(5) vendas (campea >=5 = gestao manual,
+       nunca AUMENTAR), DEPOIS das aumHourBR(20h) BR, ROAS de HOJE >= pauseRoas(1,5)
+       E ROAS dos ult. 7 dias > aumRoas7dMin(1,4) -> sugere subir o diario p/ aumMult(1,5)x o atual. */
+    if (sales < RULES.aumMaxSales && brHour() >= RULES.aumHourBR && roas >= RULES.pauseRoas && (camp._roas7d || 0) > RULES.aumRoas7dMin && sp > RULES.limMinSpend) {
+      var baseA = curDaily > 0 ? curDaily : Math.max(sp, RULES.floorDaily);
+      var tgtA = baseA * RULES.aumMult;
+      var neA = (tgtA && rem > 0) ? brDatePlus(Math.max(1, Math.ceil(rem / tgtA))) : null;
+      return { action: 'AUMENTAR diario p/ $' + Math.round(tgtA) + ' (' + RULES.aumMult + 'x — ROAS hoje ' + roasFmt + ', 7d ' + (camp._roas7d || 0).toFixed(2).replace('.', ',') + ', apos ' + RULES.aumHourBR + 'h)', cls: 'd-good', target: tgtA, newEnd: neA, key: 'AUMENTAR', sig: 'AUMENTAR' };
+    }
+    /* SEM VENDA: gastou >= cutNoSaleSpend($100) -> CORTAR (+cutDays, reduz o ritmo). Senao Coletando. */
+    if (sales === 0 && sp >= RULES.cutNoSaleSpend) return { action: 'REDUZIR RITMO (+' + RULES.cutDays + 'd — $' + Math.round(sp) + ' hoje s/ venda)', cls: 'd-bad', target: cortarTarget, newEnd: cortarEnd, key: 'CORTAR', sig: 'CORTAR' };
     if (sales === 0) return { action: 'Coletando (sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
-    /* COM VENDA: ROAS <= limRoas(1,4) -> LIMITAR no GASTO DE HOJE, INDEPENDENTE do nº de vendas.
-       1-3 vendas com 1,4 < ROAS < pauseRoas(1,5) -> PAUSAR (unica pausa; robo avisa aos ~50min). */
-    var limRoas = RULES.limRoas;
-    var limRoasTxt = limRoas.toFixed(2).replace('.', ',');
-    if (roas <= limRoas && sp > RULES.limMinSpend) return { action: 'LIMITAR GASTO no atual (ROAS ' + roasFmt + ' <= ' + limRoasTxt + ', ' + sales + ' vendas, $' + Math.round(sp) + ' hoje)', cls: 'd-bad', target: sp, newEnd: null, key: 'LIMITAR_GASTO', sig: 'LIMITAR_GASTO' };
-    if (sales <= RULES.pauseSalesBreak && roas < RULES.pauseRoas) return { action: 'PAUSAR (ROAS ' + roasFmt + ' < ' + pauseRoasTxt + ', ' + sales + ' venda)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
-    /* Nao pausou. >5 vendas (aumMaxSales) -> MANTER (escala/gestao MANUAL, robo nao mexe). */
-    if (sales > RULES.aumMaxSales) return { action: 'MANTER (>' + RULES.aumMaxSales + ' vendas, ROAS ' + roasFmt + ' — gestao manual)', cls: 'd-good', target: null, newEnd: null, key: 'MANTER', sig: null };
-    /* ROAS >= 1,5: AUMENTAR +20% do DIARIO ATUAL so se ROAS > escRoas(1,7) E 3+ vendas; senao MANTER. */
-    if (roas > RULES.escRoas && sales >= RULES.excMinSales) {
-      var base = curDaily > 0 ? curDaily : Math.max(sp, RULES.floorDaily);
-      var tgt = base * (1 + RULES.escPct);
-      var ne = (tgt && rem > 0) ? brDatePlus(Math.max(1, Math.ceil(rem / tgt))) : null;
-      return { action: 'AUMENTAR +' + Math.round(RULES.escPct * 100) + '% p/ $' + Math.round(tgt) + ' (ROAS ' + roasFmt + ', ' + sales + ' vendas)', cls: 'd-good', target: tgt, newEnd: ne, key: 'AUMENTAR', sig: 'AUMENTAR' };
+    /* COM VENDA e menos de aumMaxSales(5) vendas: ROAS < limRoas(1,4) -> CORTAR (+cutDays, reduz ritmo);
+       1,4 <= ROAS < pauseRoas(1,5) -> PAUSAR (esperar o REBOTE da atribuicao 1h08; robo avisa p/ reativar antes de 1h). */
+    if (sales < RULES.aumMaxSales && sp > RULES.limMinSpend) {
+      if (roas < RULES.limRoas) return { action: 'REDUZIR RITMO (+' + RULES.cutDays + 'd — ROAS ' + roasFmt + ' < ' + RULES.limRoas.toFixed(1).replace('.', ',') + ', ' + sales + ' venda)', cls: 'd-bad', target: cortarTarget, newEnd: cortarEnd, key: 'CORTAR', sig: 'CORTAR' };
+      if (roas < RULES.pauseRoas) return { action: 'PAUSAR — esperar rebote (ROAS ' + roasFmt + ' < ' + pauseRoasTxt + ', ' + sales + ' venda)', cls: 'd-bad', target: null, newEnd: null, key: 'PAUSAR', sig: 'PAUSAR' };
     }
+    /* CAMPEA: >= aumMaxSales(5) vendas -> NUNCA corta (gestao manual, robo nao freia). Escala se ROAS alto. */
+    if (sales > RULES.aumMaxSales) return { action: 'MANTER (>' + RULES.aumMaxSales + ' vendas, ROAS ' + roasFmt + ' — gestao manual)', cls: 'd-good', target: null, newEnd: null, key: 'MANTER', sig: null };
+    /* ROAS >= 1,5 mas fora da janela AUMENTAR (antes das 20h, ou 7d <= 1,4): MANTER (nao mexe). */
     return { action: 'MANTER (ROAS ' + roasFmt + ', mantem orcamento)', cls: 'd-good', target: null, newEnd: null, key: 'MANTER', sig: null };
   }
   /* Registro (por dispositivo) da ultima regra aplicada em cada campanha, com hora. Reseta a cada dia. */
