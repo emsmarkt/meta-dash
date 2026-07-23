@@ -1223,7 +1223,7 @@
              Valores de anuncio (DISAPPROVED etc.) causavam erro 400. */
           /* Contas/BMs a ignorar (ex: Effective 01 e Origin). */
           var an = (acc.name || '').toLowerCase();
-          if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0) return null;
+          if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0 || an.indexOf('hhh hhh') >= 0) return null;
           return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,lifetime_budget,daily_budget,stop_time,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
             list.filter(function(c) {
               var es = (c.effective_status || c.status || '').toUpperCase();
@@ -1422,7 +1422,7 @@
         var batch = accounts.slice(idx, idx+6); idx += 6;
         return Promise.all(batch.map(function(acc) {
           var an = (acc.name || '').toLowerCase();
-          if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0) return null;
+          if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0 || an.indexOf('hhh hhh') >= 0) return null;
           /* ABO: NAO exige lifetime_budget (o budget esta no conjunto). */
           return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
             list.filter(function(c) {
