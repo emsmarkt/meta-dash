@@ -351,8 +351,7 @@
     accBase: 1.5,           // piso de ROAS padrao (<=2 vendas, ou >2 vendas em dia nao-bom)
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
-    cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
-    noSaleHourBR: 23, noSaleDaily: 100, // SEM venda hoje: ao chegar 23h BR baixa o diario p/ $100 (via termino), so se acima disso
+    cutNoSaleSpend: 120, // SEM venda: gastou >= isso -> CORTA (+364d), a QUALQUER hora, 24h/dia. Unica regra de sem-venda.
     /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
        Antes das 18h: dispara em 45 -> trava ~$60. A partir das 18h: dispara em 106 -> trava ~$140.
        As 18h o robo SOBE o teto das ja limitadas sem venda ($60 -> $140). */
@@ -1688,12 +1687,9 @@
       var _cmp = sales >= RULES.aumMaxSales ? ' campea s/ aumento ha ' + (_incDays >= 9999 ? 'nunca' : _incDays + 'd') + ',' : '';
       return { action: 'AUMENTAR diario p/ $' + Math.round(tgtA) + ' (' + RULES.aumMult + 'x —' + _cmp + ' ROAS hoje ' + roasFmt + ', 7d ' + (camp._roas7d || 0).toFixed(2).replace('.', ',') + ', apos ' + RULES.aumHourBR + 'h)', cls: 'd-good', target: tgtA, newEnd: neA, key: 'AUMENTAR', sig: 'AUMENTAR' };
     }
-    /* SEM VENDA hoje: ao chegar noSaleHourBR(23h) BR, baixa o DIARIO p/ noSaleDaily($100) via termino
-       (so se o ritmo atual > $100 — nunca aumenta). Antes das 23h: Coletando (da o dia p/ vender). */
-    if (sales === 0 && brHour() >= RULES.noSaleHourBR && curDaily > RULES.noSaleDaily) {
-      var neNS = rem > 0 ? brDatePlus(Math.max(1, Math.ceil(rem / RULES.noSaleDaily))) : cortarEnd;
-      return { action: 'DIARIO p/ $' + RULES.noSaleDaily + ' (sem venda hoje, apos ' + RULES.noSaleHourBR + 'h)', cls: 'd-bad', target: RULES.noSaleDaily, newEnd: neNS, key: 'CORTAR', sig: 'CORTAR' };
-    }
+    /* SEM VENDA hoje: gastou >= cutNoSaleSpend($120) -> CORTA (+364d), a QUALQUER hora, 24h/dia.
+       Senao Coletando (ainda dando o dia p/ vender). NAO existe mais regra por horario aqui. */
+    if (sales === 0 && sp >= RULES.cutNoSaleSpend) return { action: 'CORTAR (+' + RULES.cutDays + 'd — $' + Math.round(sp) + ' hoje SEM venda)', cls: 'd-bad', target: cortarTarget, newEnd: cortarEnd, key: 'CORTAR', sig: 'CORTAR' };
     if (sales === 0) return { action: 'Coletando (sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
     /* COM VENDA e menos de aumMaxSales(5) vendas: ROAS < limRoas(1,4) -> CORTAR (+cutDays, reduz ritmo);
        1,4 <= ROAS < pauseRoas(1,5) -> PAUSAR (esperar o REBOTE da atribuicao 1h08; robo avisa p/ reativar antes de 1h). */
