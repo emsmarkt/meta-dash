@@ -154,6 +154,9 @@
       </div>
       <input class="srch" id="cboSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
       <button class="btn" id="btnLoadCBO"><span id="spinCBO" class="spin" style="display:none"></span>&#8635; Carregar campanhas CBO</button>
+      <label id="autoApplyWrap" title="Quando LIGADO, o dashboard aplica sozinho as regras PAUSAR e CORTAR (as mesmas que o robo aplicaria) apos cada carregamento, no periodo Hoje. AUMENTAR e ATIVAR seguem manuais. Desligado por padrao." style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;cursor:pointer;user-select:none;padding:4px 8px;border:1px solid #30363d;border-radius:6px">
+        <input type="checkbox" id="autoApplyChk" style="cursor:pointer;margin:0"> &#9881; Aplicar regras automatico
+      </label>
     </div>
     <div class="tbl-wrap">
       <table>
@@ -349,6 +352,7 @@
     accGood: 1.35,          // piso de ROAS em dia BOM com >2 vendas
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 100, // gastou >= isso e 0 venda -> PAUSA (e alerta). Usado tbm p/ pausa CPC/ROAS
+    noSaleHourBR: 23, noSaleDaily: 100, // SEM venda hoje: ao chegar 23h BR baixa o diario p/ $100 (via termino), so se acima disso
     /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
        Antes das 18h: dispara em 45 -> trava ~$60. A partir das 18h: dispara em 106 -> trava ~$140.
        As 18h o robo SOBE o teto das ja limitadas sem venda ($60 -> $140). */
@@ -1290,6 +1294,7 @@
           ]).then(function(){
             cboData = camps; renderCBO();
             var sp = document.getElementById('spinCBO'); if (sp) sp.style.display='none';
+            if (getAutoApply() && cboPeriod === 'today') autoApplyRules();
           });
         });
       }
@@ -1683,8 +1688,12 @@
       var _cmp = sales >= RULES.aumMaxSales ? ' campea s/ aumento ha ' + (_incDays >= 9999 ? 'nunca' : _incDays + 'd') + ',' : '';
       return { action: 'AUMENTAR diario p/ $' + Math.round(tgtA) + ' (' + RULES.aumMult + 'x —' + _cmp + ' ROAS hoje ' + roasFmt + ', 7d ' + (camp._roas7d || 0).toFixed(2).replace('.', ',') + ', apos ' + RULES.aumHourBR + 'h)', cls: 'd-good', target: tgtA, newEnd: neA, key: 'AUMENTAR', sig: 'AUMENTAR' };
     }
-    /* SEM VENDA: gastou >= cutNoSaleSpend($100) -> CORTAR (+cutDays, reduz o ritmo). Senao Coletando. */
-    if (sales === 0 && sp >= RULES.cutNoSaleSpend) return { action: 'REDUZIR RITMO (+' + RULES.cutDays + 'd — $' + Math.round(sp) + ' hoje s/ venda)', cls: 'd-bad', target: cortarTarget, newEnd: cortarEnd, key: 'CORTAR', sig: 'CORTAR' };
+    /* SEM VENDA hoje: ao chegar noSaleHourBR(23h) BR, baixa o DIARIO p/ noSaleDaily($100) via termino
+       (so se o ritmo atual > $100 — nunca aumenta). Antes das 23h: Coletando (da o dia p/ vender). */
+    if (sales === 0 && brHour() >= RULES.noSaleHourBR && curDaily > RULES.noSaleDaily) {
+      var neNS = rem > 0 ? brDatePlus(Math.max(1, Math.ceil(rem / RULES.noSaleDaily))) : cortarEnd;
+      return { action: 'DIARIO p/ $' + RULES.noSaleDaily + ' (sem venda hoje, apos ' + RULES.noSaleHourBR + 'h)', cls: 'd-bad', target: RULES.noSaleDaily, newEnd: neNS, key: 'CORTAR', sig: 'CORTAR' };
+    }
     if (sales === 0) return { action: 'Coletando (sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
     /* COM VENDA e menos de aumMaxSales(5) vendas: ROAS < limRoas(1,4) -> CORTAR (+cutDays, reduz ritmo);
        1,4 <= ROAS < pauseRoas(1,5) -> PAUSAR (esperar o REBOTE da atribuicao 1h08; robo avisa p/ reativar antes de 1h). */
@@ -2076,12 +2085,41 @@
   }
   window.__mdToggleHist = toggleHistGroup;
 
-  function applyRuleSuggestion(i) {
+  /* ===== AUTO-APPLY (opt-in): dashboard aplica sozinho as regras seguras apos cada carga ===== */
+  function getAutoApply() { try { return localStorage.getItem('md_autoapply') === '1'; } catch(e) { return false; } }
+  /* Regras que o dashboard PODE aplicar sozinho — as mesmas do robo. AUMENTAR/ATIVAR NAO (decisao deliberada). */
+  var AUTO_APPLY_KEYS = { PAUSAR: 1, CORTAR: 1, REMLIMITE: 1 };
+  var _autoApplyRunning = false;
+  function autoApplyRules() {
+    if (_autoApplyRunning) return;
+    if (!getAutoApply() || cboPeriod !== 'today') return;
+    var queue = [];
+    cboData.forEach(function(camp, i){
+      if (!camp || (!camp.lifetime_budget && camp.daily_budget)) return; /* pula orcamento DIARIO */
+      var sig = camp._sugSig;
+      if (!sig || !AUTO_APPLY_KEYS[sig]) return;                  /* so PAUSAR/CORTAR/REMLIMITE */
+      var applied = getAppliedRule(camp.id);
+      if (applied && applied.sig === sig) return;                 /* ja aplicada hoje -> nao repete */
+      queue.push(i);
+    });
+    if (!queue.length) return;
+    _autoApplyRunning = true;
+    var n = 0;
+    (function next(){
+      if (n >= queue.length) { _autoApplyRunning = false; return; }
+      var i = queue[n++];
+      try { applyRuleSuggestion(i, { auto: true }); } catch(e) {}
+      setTimeout(next, 600); /* espaça as aplicações p/ não sobrecarregar a Meta API */
+    })();
+  }
+
+  function applyRuleSuggestion(i, opts) {
     var camp = cboData[i];
     if (!camp) return;
+    var auto = !!(opts && opts.auto); /* modo automatico: pula os confirm() */
     /* PAUSAR: muda status pra PAUSED (nao e mudanca de data/orcamento). */
     if (camp._sugSig === 'PAUSAR') {
-      if (!confirm('PAUSAR a campanha "' + camp.name + '" no Meta?\n' + (camp._sugAction || ''))) return;
+      if (!auto && !confirm('PAUSAR a campanha "' + camp.name + '" no Meta?\n' + (camp._sugAction || ''))) return;
       var pb = document.getElementById('csug_'+i);
       if (pb) { pb.disabled = true; pb.textContent = 'Pausando...'; }
       withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, { status: 'PAUSED' }); })
@@ -2099,7 +2137,7 @@
     }
     /* ATIVAR: campanha pausada que recuperou (ROAS > 1,3) -> volta pra ACTIVE. */
     if (camp._sugSig === 'ATIVAR') {
-      if (!confirm('ATIVAR a campanha "' + camp.name + '" no Meta?\n' + (camp._sugAction || ''))) return;
+      if (!auto && !confirm('ATIVAR a campanha "' + camp.name + '" no Meta?\n' + (camp._sugAction || ''))) return;
       var ab = document.getElementById('csug_'+i);
       if (ab) { ab.disabled = true; ab.textContent = 'Ativando...'; }
       withTokenFallback(camp._tk, function(tk){ return postForm(camp.id, tk, { status: 'ACTIVE' }); })
@@ -2125,7 +2163,7 @@
       var capped = (camp._adsets || []).filter(function(s){ return s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0; });
       if (!capped.length) capped = (camp._adsets || []).filter(function(s){ return (s.effective_status||'').toUpperCase() === 'ACTIVE'; });
       if (!capped.length) { alert('Nenhum conjunto com limite para remover.'); return; }
-      if (!confirm('REMOVER o limite de gasto da campanha "' + camp.name + '"?\nO teto sobe p/ o orcamento total ($' + Math.round(noCap/100).toLocaleString('pt-BR') + ') = sem limite na pratica. ' + capped.length + ' conjunto(s).')) return;
+      if (!auto && !confirm('REMOVER o limite de gasto da campanha "' + camp.name + '"?\nO teto sobe p/ o orcamento total ($' + Math.round(noCap/100).toLocaleString('pt-BR') + ') = sem limite na pratica. ' + capped.length + ' conjunto(s).')) return;
       var rb = document.getElementById('csug_'+i);
       if (rb) { rb.disabled = true; rb.textContent = 'Removendo...'; }
       Promise.all(capped.map(function(s){
@@ -3052,6 +3090,15 @@
   document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else if (curTab === 'abo') loadABO(); else load(); });
   document.getElementById('btnTokens').addEventListener('click', openModal);
   document.getElementById('btnLoadCBO').addEventListener('click', loadCBO);
+  (function(){
+    var aac = document.getElementById('autoApplyChk');
+    if (!aac) return;
+    aac.checked = getAutoApply();
+    aac.addEventListener('change', function(){
+      try { localStorage.setItem('md_autoapply', aac.checked ? '1' : '0'); } catch(e) {}
+      if (aac.checked && cboPeriod === 'today' && cboData && cboData.length) autoApplyRules();
+    });
+  })();
   var btnLoadABO = document.getElementById('btnLoadABO');
   if (btnLoadABO) btnLoadABO.addEventListener('click', loadABO);
   var aboSrchEl = document.getElementById('aboSrch');
