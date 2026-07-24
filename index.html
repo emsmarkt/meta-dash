@@ -1313,7 +1313,7 @@
       }
       var batch = camps.slice(idx, idx+6); idx += 6;
       return Promise.all(batch.map(function(c) {
-        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,cpc&time_range='+totalRange+'&access_token='+c._tk;
+        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click&time_range='+totalRange+'&access_token='+c._tk;
         /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
         var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
         /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
@@ -1322,22 +1322,26 @@
         var calls = isLifetime
           ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
           : [fj(totalUrl),
-             fj(API+'/'+c.id+'/insights?fields=spend,clicks,cpc&'+periodParam+'&access_token='+c._tk),
+             fj(API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click&'+periodParam+'&access_token='+c._tk),
              fj(adsUrl), fj(adsetsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
           c._spend = t ? parseFloat(t.spend) : 0;
           var adsRes;
+          /* CPC de LINK (cost_per_inline_link_click) = "CPC correto" do media buyer = gasto / cliques no LINK,
+             NAO o cpc de todos os cliques (que conta curtida/comentario/expandir). Guarda tbm os cliques de link. */
           if (isLifetime) {
             c._periodSpend = c._spend;
             c._clicks = t ? (parseInt(t.clicks) || 0) : 0;
-            c._cpc = t ? (parseFloat(t.cpc) || 0) : 0;
+            c._linkClicks = t ? (parseInt(t.inline_link_clicks) || 0) : 0;
+            c._cpc = t ? (parseFloat(t.cost_per_inline_link_click) || 0) : 0;
             adsRes = res[1];
           } else {
             var p = res[1].data && res[1].data[0];
             c._periodSpend = p ? parseFloat(p.spend) : 0;
             c._clicks = p ? (parseInt(p.clicks) || 0) : 0;
-            c._cpc = p ? (parseFloat(p.cpc) || 0) : 0;
+            c._linkClicks = p ? (parseInt(p.inline_link_clicks) || 0) : 0;
+            c._cpc = p ? (parseFloat(p.cost_per_inline_link_click) || 0) : 0;
             adsRes = res[2];
           }
           var ads = (adsRes && adsRes.data) ? adsRes.data : [];
@@ -2277,8 +2281,11 @@
       var curEnd = camp.stop_time ? (typeof camp.stop_time === 'number' ? new Date(camp.stop_time * 1000) : new Date(camp.stop_time)).toISOString().split('T')[0] : '';
       var name = camp.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       var acctName = camp._accountName.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-      var periodSpend = camp._periodSpend > 0 ? fmtUSD(camp._periodSpend) : '---';
-      var clicks = camp._clicks > 0 ? camp._clicks.toLocaleString('pt-BR') : '---';
+      /* Gasto exibido = gasto REAL da Meta (_metaSpend). O _periodSpend (custo do RedTrack) continua
+         sendo o que as REGRAS usam (mesmo fuso das vendas); aqui a coluna mostra o gasto autoritativo. */
+      var periodSpend = (camp._metaSpend > 0) ? fmtUSD(camp._metaSpend) : (camp._periodSpend > 0 ? fmtUSD(camp._periodSpend) : '---');
+      /* Coluna Cliques = cliques no LINK (inline_link_clicks), consistente com o CPC de link (gasto/linkclicks). */
+      var clicks = camp._linkClicks > 0 ? camp._linkClicks.toLocaleString('pt-BR') : '---';
       var cpc = camp._cpc > 0 ? fmtUSD(camp._cpc) : '---';
       var sp = camp._periodSpend || 0, clk = camp._clicks || 0;
       var sales = (hasC && camp._conv) ? (camp._conv.sales||0) : 0;
