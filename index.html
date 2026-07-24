@@ -615,6 +615,16 @@
     if (camp._acctStatus === 3) { return { cls:'b-r', txt:'CONTA PENDENTE', group:'other', issue:issue || 'Pendencia de pagamento na conta', isError:true, note:'' }; }
     /* Nota dos anuncios (X/Y ativos): vale para TODAS as campanhas, mesmo so com PAUSED. */
     var tot = camp._adTotal || 0, act = camp._adActive || 0, rej = camp._adRejected || 0, werr = camp._adWithErr || 0, pau = camp._adPaused || 0;
+    var entregando = (eff === 'ACTIVE' || eff === 'WITH_ISSUES');
+    /* NAO deu p/ ler os anuncios (ex.: "User request limit reached" da Meta). NUNCA mostrar como OK:
+       sem isso, a campanha com TODOS os anuncios rejeitados aparecia verde/normal. */
+    if (camp._adsErr) {
+      return { cls:'b-a', txt:info.txt, group:info.group, issue:'Nao foi possivel ler os anuncios: ' + camp._adsErr + ' (recarregue p/ conferir)', isError:true, note:'anuncios: NAO carregou', noteCls:'warn' };
+    }
+    /* Campanha entregando e sem NENHUM anuncio na campanha. */
+    if (camp._adsLoaded && tot === 0 && entregando) {
+      return { cls:'b-r', txt:'SEM ANUNCIO', group:'active', issue:(issue ? issue + ' | ' : '') + 'Campanha ativa sem nenhum anuncio', isError:true, note:'0 anuncios', noteCls:'crit' };
+    }
     if (camp._adsLoaded && tot > 0) {
       var note = act + '/' + tot + ' anuncios ativos';
       var det = [];
@@ -1327,6 +1337,9 @@
             adsRes = res[2];
           }
           var ads = (adsRes && adsRes.data) ? adsRes.data : [];
+          /* A Meta as vezes corta a chamada ("User request limit reached"). fj() NAO lanca erro: devolve
+             {error}. Sem registrar isso, _adTotal virava 0 e o aviso de anuncio rejeitado sumia calado. */
+          c._adsErr = (adsRes && adsRes.error) ? String(adsRes.error.message || 'erro ao ler anuncios').slice(0, 120) : null;
           /* Total relevante: exclui ARCHIVED/DELETED do denominador. */
           var relevantes = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s!=='ARCHIVED' && s!=='DELETED'; });
           c._adTotal = relevantes.length;
@@ -1354,7 +1367,7 @@
           var hasCap = anyCap && sumCaps < Math.max(campSpent * 2, 20);
           c._adsets = adsets;
           c._hasCap = hasCap; /* ao menos 1 conjunto com "Maximo total" setado = campanha limitada (soft-stop) */
-        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; c._adsets=[]; c._hasCap=false; });
+        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; c._adsErr='falha ao carregar os dados da campanha'; c._adsets=[]; c._hasCap=false; });
       })).then(nextBatch);
     }
     return nextBatch();
