@@ -361,7 +361,7 @@
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 120, // SEM venda: gastou >= isso -> CORTA (+364d), a QUALQUER hora, 24h/dia. Unica regra de sem-venda.
     /* RESET DA MANHA (9h BR): orcamento TOTAL com gasto de hoje < $120 E diario atual < $100 -> sobe o diario p/ $120 (via termino). */
-    morningHourBR: 9, morningMaxSpend: 120, morningMaxDaily: 100, morningDaily: 120,
+    morningHours: [0, 9], morningMaxSpend: 120, morningMaxDaily: 100, morningDaily: 120,
     /* RESTAURAR: ultima mudanca de termino foi CORTAR e o ROAS voltou acima disso -> devolve o diario de antes. */
     restoreRoas: 1.4,
     /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
@@ -1712,12 +1712,12 @@
       var neR = brDatePlus(Math.max(1, Math.ceil(rem / prevD)));
       return { action: 'RESTAURAR diario p/ $' + Math.round(prevD) + ' (era antes do CORTAR — ROAS ' + roasFmt + ')', cls: 'd-good', target: prevD, newEnd: neR, key: 'RESTAURAR', sig: 'RESTAURAR' };
     }
-    /* RESET DA MANHA (morningHourBR 9h BR, 1x/dia): campanha de orcamento TOTAL com gasto de HOJE
+    /* RESET (morningHours = 00h e 9h BR): campanha de orcamento TOTAL com gasto de HOJE
        < morningMaxSpend($120) E ritmo diario atual < morningMaxDaily($100) -> sobe o DIARIO p/
        morningDaily($120) via termino. Devolve budget a quem ficou estrangulado, pra ter chance no dia. */
-    if (brHour() === RULES.morningHourBR && sp < RULES.morningMaxSpend && curDaily < RULES.morningMaxDaily && rem > 0) {
+    if (RULES.morningHours.indexOf(brHour()) >= 0 && sp < RULES.morningMaxSpend && curDaily < RULES.morningMaxDaily && rem > 0) {
       var neM = brDatePlus(Math.max(1, Math.ceil(rem / RULES.morningDaily)));
-      return { action: 'SUBIR DIARIO p/ $' + RULES.morningDaily + ' (' + RULES.morningHourBR + 'h — gasto $' + Math.round(sp) + ', diario atual $' + Math.round(curDaily) + ')', cls: 'd-good', target: RULES.morningDaily, newEnd: neM, key: 'SUBIR_DIARIO', sig: 'SUBIR_DIARIO' };
+      return { action: 'SUBIR DIARIO p/ $' + RULES.morningDaily + ' (reset ' + brHour() + 'h — gasto $' + Math.round(sp) + ', diario atual $' + Math.round(curDaily) + ')', cls: 'd-good', target: RULES.morningDaily, newEnd: neM, key: 'SUBIR_DIARIO', sig: 'SUBIR_DIARIO' };
     }
     /* AUMENTAR (so SUGESTAO): DEPOIS das aumHourBR(20h) BR, ROAS de HOJE >= pauseRoas(1,5)
        E ROAS dos ult. 7 dias > aumRoas7dMin(1,4) -> sugere subir o diario p/ aumMult(1,5)x o atual.
