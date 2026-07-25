@@ -6,6 +6,14 @@
 #mdb .tgl-btn.tgl-off{background:rgba(63,185,80,.15);color:#3fb950}
 #mdb .tgl-btn.tgl-off:hover{background:rgba(63,185,80,.28)}
 #mdb .tgl-btn:disabled{opacity:.5;cursor:wait}
+/* Interruptor tipo iOS (LIVE/DRY do robo) */
+#mdb .md-switch{position:relative;display:inline-block;width:40px;height:22px;flex:0 0 auto}
+#mdb .md-switch input{position:absolute;opacity:0;width:0;height:0}
+#mdb .md-switch .md-slider{position:absolute;inset:0;background:#30363d;border-radius:22px;transition:background .18s ease}
+#mdb .md-switch .md-slider::before{content:"";position:absolute;height:16px;width:16px;left:3px;top:3px;background:#c9d1d9;border-radius:50%;transition:transform .18s ease,background .18s ease;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+#mdb .md-switch input:checked + .md-slider{background:#238636}
+#mdb .md-switch input:checked + .md-slider::before{transform:translateX(18px);background:#fff}
+#mdb .md-switch input:focus-visible + .md-slider{box-shadow:0 0 0 3px rgba(35,134,54,.35)}
 /* ----- Polimento geral (desktop + mobile) ----- */
 #mdb .tbl-wrap{scrollbar-width:thin;scrollbar-color:#30363d transparent}
 #mdb .tbl-wrap::-webkit-scrollbar{height:9px;width:9px}
@@ -155,7 +163,7 @@
       <input class="srch" id="cboSrch" type="text" placeholder="Buscar campanha..." style="max-width:260px">
       <button class="btn" id="btnLoadCBO"><span id="spinCBO" class="spin" style="display:none"></span>&#8635; Carregar campanhas CBO</button>
       <label id="autoApplyWrap" title="Interruptor LIVE/DRY do robô. LIGADO = o robô APLICA as regras de verdade nas campanhas a cada 5 min (APPLY_MODE=live). DESLIGADO = só simula (dry), você aplica na mão. Salva no Worker (vale para todos os dispositivos e sobrevive a deploy)." style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;cursor:pointer;user-select:none;padding:4px 8px;border:1px solid #30363d;border-radius:6px">
-        <input type="checkbox" id="autoApplyChk" style="cursor:pointer;margin:0"> <span id="autoApplyTxt">Robô: —</span>
+        <span class="md-switch"><input type="checkbox" id="autoApplyChk"><span class="md-slider"></span></span> <span id="autoApplyTxt" style="font-weight:600">Robô: —</span>
       </label>
     </div>
     <div class="tbl-wrap">
@@ -3158,8 +3166,8 @@
       var wrap = document.getElementById('autoApplyWrap');
       var txt = document.getElementById('autoApplyTxt');
       var live = mode === 'live';
-      if (txt) txt.textContent = pend ? '… salvando' : (live ? '🟢 Robô LIVE (aplicando)' : '⚪ Robô DRY (só simula)');
-      if (wrap) wrap.style.borderColor = live ? '#238636' : '#30363d';
+      if (txt) { txt.textContent = pend ? '… salvando' : (live ? 'Robô LIVE — aplicando' : 'Robô DRY — só simula'); txt.style.color = live ? '#3fb950' : '#8b949e'; }
+      if (wrap) wrap.style.borderColor = live ? 'rgba(35,134,54,.6)' : '#30363d';
     }
     var u = getWkUrl();
     /* estado inicial: le do Worker */
