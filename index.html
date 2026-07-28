@@ -2462,8 +2462,8 @@
     cboData.forEach(function(camp, i) {
       var inp = document.getElementById('cdaily_'+i);
       if (inp) inp.addEventListener('input', function() { calcCBORow(i, 'daily'); });
-      var bdgBtn = document.getElementById('cbudgetbtn_'+i);
-      if (bdgBtn) bdgBtn.addEventListener('click', function() { applyCampaignBudget(i); });
+      var bedit = document.getElementById('bedit_'+i);
+      if (bedit) bedit.addEventListener('click', function() { editBudget(i); });
       var dateInp = document.getElementById('cnewdate_'+i);
       if (dateInp) dateInp.addEventListener('change', function() { calcCBORow(i, 'date'); });
       var btn = document.getElementById('csavebtn_'+i);
@@ -2924,14 +2924,32 @@
   }
 
   /* ===== EDITAR ORCAMENTO da campanha (diario OU total) direto no Meta ===== */
-  /* Celula da coluna Orcamento: mostra o valor atual + input (pre-preenchido) + botao 💰 p/ aplicar. */
+  /* Celula da coluna Orcamento: valor + lapis de editar (limpo). Clicar no lapis -> modo edicao (editBudget). */
   function budgetCellHtml(camp, i, isDaily, lb) {
     var cur = isDaily ? (parseFloat(camp.daily_budget) / 100) : lb;
+    var lbl = isDaily ? 'Diário' : 'Total';
+    return '<div id="bcell_' + i + '" style="line-height:1.35">'
+      + '<span id="bedit_' + i + '" title="Editar orçamento ' + lbl.toLowerCase() + '" style="cursor:pointer;color:#6e7681;margin-right:6px;font-size:13px;user-select:none">&#9998;</span>'
+      + '<span style="font-size:12px;color:#f0f6fc">' + fmtUSD(cur) + '</span>'
+      + '<div style="font-size:10px;color:' + (isDaily ? '#d29922' : '#6e7681') + '">' + lbl + '</div></div>';
+  }
+  /* Modo edicao inline: troca a celula por input + salvar (✓) + cancelar (✕). */
+  function editBudget(i) {
+    var camp = cboData[i]; if (!camp) return;
+    var cell = document.getElementById('bcell_' + i); if (!cell) return;
+    var isDaily = !camp.lifetime_budget && !!camp.daily_budget;
+    var cur = isDaily ? (parseFloat(camp.daily_budget) / 100) : (parseFloat(camp.lifetime_budget) / 100);
     var lbl = isDaily ? 'diário' : 'total';
-    return fmtUSD(cur) + '<div style="font-size:10px;color:' + (isDaily ? '#d29922' : '#6e7681') + '">' + lbl + '</div>'
-      + '<div style="display:flex;gap:3px;margin-top:4px">'
-      + '<input class="cbo-inp" id="cbudget_' + i + '" type="number" min="1" step="any" value="' + Math.round(cur) + '" style="width:60px;padding:4px 6px" title="Novo orçamento ' + lbl + ' (US$)">'
-      + '<button class="save-btn" id="cbudgetbtn_' + i + '" title="Aplicar novo orçamento ' + lbl + ' no Meta" style="padding:3px 7px">💰</button></div>';
+    cell.innerHTML = '<div style="display:flex;align-items:center;gap:3px">'
+      + '<span style="font-size:11px;color:#6e7681">$</span>'
+      + '<input class="cbo-inp" id="cbudget_' + i + '" type="number" min="1" step="any" value="' + Math.round(cur) + '" style="width:64px;padding:4px 6px" title="Novo orçamento ' + lbl + ' (US$)">'
+      + '<button class="save-btn" id="bsave_' + i + '" title="Salvar orçamento ' + lbl + '" style="padding:3px 8px">&#10003;</button>'
+      + '<button class="save-btn" id="bcancel_' + i + '" title="Cancelar" style="padding:3px 7px;background:#21262d;border-color:#30363d;color:#8b949e">&#10005;</button></div>'
+      + '<div style="font-size:10px;color:#6e7681;margin-top:2px">' + lbl + '</div>';
+    var inp = document.getElementById('cbudget_' + i);
+    if (inp) { inp.focus(); inp.select(); inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') applyCampaignBudget(i); else if (e.key === 'Escape') renderCBO(); }); }
+    var sv = document.getElementById('bsave_' + i); if (sv) sv.addEventListener('click', function () { applyCampaignBudget(i); });
+    var cn = document.getElementById('bcancel_' + i); if (cn) cn.addEventListener('click', function () { renderCBO(); });
   }
   /* Aplica novo orcamento no Meta: daily_budget (CBO diario) OU lifetime_budget (CBO total), em CENTAVOS.
      Confirma + verifica lendo de volta o campo. */
@@ -2947,7 +2965,7 @@
     var cents = Math.round(val * 100);
     var atual = isDaily ? (parseFloat(camp.daily_budget) / 100) : (parseFloat(camp.lifetime_budget) / 100);
     if (!confirm('Mudar o orçamento ' + (isDaily ? 'DIÁRIO' : 'TOTAL') + ' de "' + camp.name + '"\nde $' + Math.round(atual) + ' para $' + val + '?')) return;
-    var btn = document.getElementById('cbudgetbtn_' + i);
+    var btn = document.getElementById('bsave_' + i);
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
     var params = {}; params[field] = cents;
     withTokenFallback(camp._tk, function (tk) { return postForm(camp.id, tk, params); })
@@ -2962,11 +2980,11 @@
             renderCBO();
           } else {
             notifyErr('Não confirmou a mudança em "' + camp.name + '"', 'Meta manteve ' + (novo ? ('$' + Math.round(parseInt(novo) / 100)) : '?') + '. Clique 💰 de novo.');
-            if (btn) { btn.disabled = false; btn.textContent = '💰'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = '&#10003;'; }
           }
         });
       })
-      .catch(function (e) { notifyErr('Erro ao mudar orçamento de "' + camp.name + '"', e && e.message ? e.message : ''); if (btn) { btn.disabled = false; btn.textContent = '💰'; } });
+      .catch(function (e) { notifyErr('Erro ao mudar orçamento de "' + camp.name + '"', e && e.message ? e.message : ''); if (btn) { btn.disabled = false; btn.innerHTML = '&#10003;'; } });
   }
 
   function saveCBODate(i, fromRule) {
