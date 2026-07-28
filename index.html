@@ -1321,7 +1321,7 @@
       }
       var batch = camps.slice(idx, idx+6); idx += 6;
       return Promise.all(batch.map(function(c) {
-        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click&time_range='+totalRange+'&access_token='+c._tk;
+        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&time_range='+totalRange+'&access_token='+c._tk;
         /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
         var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
         /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
@@ -1330,7 +1330,7 @@
         var calls = isLifetime
           ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
           : [fj(totalUrl),
-             fj(API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click&'+periodParam+'&access_token='+c._tk),
+             fj(API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&access_token='+c._tk),
              fj(adsUrl), fj(adsetsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
@@ -1343,6 +1343,7 @@
             c._clicks = t ? (parseInt(t.clicks) || 0) : 0;
             c._linkClicks = t ? (parseInt(t.inline_link_clicks) || 0) : 0;
             c._cpc = t ? (parseFloat(t.cost_per_inline_link_click) || 0) : 0;
+            c._ctr = t ? (parseFloat(t.inline_link_click_ctr) || 0) : 0; /* CTR de link (%), da Meta */
             adsRes = res[1];
           } else {
             var p = res[1].data && res[1].data[0];
@@ -1350,6 +1351,7 @@
             c._clicks = p ? (parseInt(p.clicks) || 0) : 0;
             c._linkClicks = p ? (parseInt(p.inline_link_clicks) || 0) : 0;
             c._cpc = p ? (parseFloat(p.cost_per_inline_link_click) || 0) : 0;
+            c._ctr = p ? (parseFloat(p.inline_link_click_ctr) || 0) : 0;
             adsRes = res[2];
           }
           var ads = (adsRes && adsRes.data) ? adsRes.data : [];
@@ -2293,7 +2295,9 @@
          sendo o que as REGRAS usam (mesmo fuso das vendas); aqui a coluna mostra o gasto autoritativo. */
       var periodSpend = (camp._metaSpend > 0) ? fmtUSD(camp._metaSpend) : (camp._periodSpend > 0 ? fmtUSD(camp._periodSpend) : '---');
       /* Coluna Cliques = cliques no LINK (inline_link_clicks), consistente com o CPC de link (gasto/linkclicks). */
-      var clicks = camp._linkClicks > 0 ? camp._linkClicks.toLocaleString('pt-BR') : '---';
+      /* Cliques no link + CTR de link (%) embaixo, ambos da Meta. */
+      var clicks = (camp._linkClicks > 0 ? camp._linkClicks.toLocaleString('pt-BR') : '---')
+                 + (camp._ctr > 0 ? '<div style="font-size:10px;color:#8b949e;margin-top:1px">CTR '+camp._ctr.toFixed(2).replace('.',',')+'%</div>' : '');
       var cpc = camp._cpc > 0 ? fmtUSD(camp._cpc) : '---';
       var sp = camp._periodSpend || 0, clk = camp._clicks || 0;
       var sales = (hasC && camp._conv) ? (camp._conv.sales||0) : 0;
@@ -2427,7 +2431,7 @@
         '<td style="font-weight:500;color:#f0f6fc;max-width:300px;white-space:normal;line-height:1.35" title="'+name+'">'+name+'</td>' +
         '<td style="font-size:12px;color:#8b949e;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acctName+'">'+acctName+'</td>' +
         '<td>'+stBadge+(st.note?'<div style="font-size:10px;color:'+(st.noteCls==='ok'?'#8b949e':(st.noteCls==='warn'?'#d29922':'#f85149'))+';margin-top:2px;white-space:nowrap">'+st.note+'</div>':'')+'<div style="margin-top:5px"><button class="tgl-btn '+(((camp.status||"").toUpperCase()==="ACTIVE")?"tgl-on":"tgl-off")+'" id="ctgl_'+i+'">'+(((camp.status||"").toUpperCase()==="ACTIVE")?"⏸ Pausar":"▶ Ativar")+'</button></div></td>' +
-        '<td style="font-size:12px">'+(isDaily ? (fmtUSD(parseFloat(camp.daily_budget)/100)+'<div style="font-size:10px;color:#d29922">di&#225;rio</div>') : fmtUSD(lb))+'</td>' +
+        '<td style="font-size:12px">'+budgetCellHtml(camp, i, isDaily, lb)+'</td>' +
         '<td style="font-size:12px;color:#8b949e">'+fmtUSD(spent)+'</td>' +
         '<td style="font-size:12px;color:#58a6ff;font-weight:500">'+(isDaily ? '---' : fmtUSD(remaining))+'</td>' +
         '<td style="font-size:12px;border-left:1px solid #21262d">'+periodSpend+'</td>' +
@@ -2458,6 +2462,8 @@
     cboData.forEach(function(camp, i) {
       var inp = document.getElementById('cdaily_'+i);
       if (inp) inp.addEventListener('input', function() { calcCBORow(i, 'daily'); });
+      var bdgBtn = document.getElementById('cbudgetbtn_'+i);
+      if (bdgBtn) bdgBtn.addEventListener('click', function() { applyCampaignBudget(i); });
       var dateInp = document.getElementById('cnewdate_'+i);
       if (dateInp) dateInp.addEventListener('change', function() { calcCBORow(i, 'date'); });
       var btn = document.getElementById('csavebtn_'+i);
@@ -2917,6 +2923,51 @@
     return round(0);
   }
 
+  /* ===== EDITAR ORCAMENTO da campanha (diario OU total) direto no Meta ===== */
+  /* Celula da coluna Orcamento: mostra o valor atual + input (pre-preenchido) + botao 💰 p/ aplicar. */
+  function budgetCellHtml(camp, i, isDaily, lb) {
+    var cur = isDaily ? (parseFloat(camp.daily_budget) / 100) : lb;
+    var lbl = isDaily ? 'diário' : 'total';
+    return fmtUSD(cur) + '<div style="font-size:10px;color:' + (isDaily ? '#d29922' : '#6e7681') + '">' + lbl + '</div>'
+      + '<div style="display:flex;gap:3px;margin-top:4px">'
+      + '<input class="cbo-inp" id="cbudget_' + i + '" type="number" min="1" step="any" value="' + Math.round(cur) + '" style="width:60px;padding:4px 6px" title="Novo orçamento ' + lbl + ' (US$)">'
+      + '<button class="save-btn" id="cbudgetbtn_' + i + '" title="Aplicar novo orçamento ' + lbl + ' no Meta" style="padding:3px 7px">💰</button></div>';
+  }
+  /* Aplica novo orcamento no Meta: daily_budget (CBO diario) OU lifetime_budget (CBO total), em CENTAVOS.
+     Confirma + verifica lendo de volta o campo. */
+  function applyCampaignBudget(i) {
+    var camp = cboData[i];
+    if (!camp) return;
+    var inp = document.getElementById('cbudget_' + i);
+    if (!inp) return;
+    var val = parseFloat(inp.value);
+    if (!(val > 0)) { alert('Digite um valor de orçamento válido (US$).'); return; }
+    var isDaily = !camp.lifetime_budget && !!camp.daily_budget;
+    var field = isDaily ? 'daily_budget' : 'lifetime_budget';
+    var cents = Math.round(val * 100);
+    var atual = isDaily ? (parseFloat(camp.daily_budget) / 100) : (parseFloat(camp.lifetime_budget) / 100);
+    if (!confirm('Mudar o orçamento ' + (isDaily ? 'DIÁRIO' : 'TOTAL') + ' de "' + camp.name + '"\nde $' + Math.round(atual) + ' para $' + val + '?')) return;
+    var btn = document.getElementById('cbudgetbtn_' + i);
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    var params = {}; params[field] = cents;
+    withTokenFallback(camp._tk, function (tk) { return postForm(camp.id, tk, params); })
+      .then(function (r) {
+        camp._tk = r.tk;
+        return fj(API + '/' + camp.id + '?fields=daily_budget,lifetime_budget&access_token=' + camp._tk).then(function (chk) {
+          var novo = isDaily ? chk.daily_budget : chk.lifetime_budget;
+          if (novo && Math.abs(parseInt(novo) - cents) <= 1) {
+            camp[field] = String(novo);
+            notifyOk('Orçamento alterado em "' + camp.name + '"', (isDaily ? 'Diário' : 'Total') + ' agora $' + Math.round(parseInt(novo) / 100));
+            logRuleHist(camp, 'ORCAMENTO', 'Orçamento ' + (isDaily ? 'diário' : 'total') + ' -> $' + val + ' (manual)', { dailyOld: null, dailyNew: null, endOld: null, endNew: null });
+            renderCBO();
+          } else {
+            notifyErr('Não confirmou a mudança em "' + camp.name + '"', 'Meta manteve ' + (novo ? ('$' + Math.round(parseInt(novo) / 100)) : '?') + '. Clique 💰 de novo.');
+            if (btn) { btn.disabled = false; btn.textContent = '💰'; }
+          }
+        });
+      })
+      .catch(function (e) { notifyErr('Erro ao mudar orçamento de "' + camp.name + '"', e && e.message ? e.message : ''); if (btn) { btn.disabled = false; btn.textContent = '💰'; } });
+  }
 
   function saveCBODate(i, fromRule) {
     var camp = cboData[i];
