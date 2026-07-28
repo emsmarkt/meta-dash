@@ -2852,8 +2852,17 @@
     var useTk = tk;
     var dayOf = function(v){ if (!v) return null; return (typeof v === 'string') ? v.slice(0,10) : new Date(v*1000).toISOString().split('T')[0]; };
     function listSets() {
-      return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/adsets?fields=id,name,end_time&limit=200&access_token='+t); })
-        .then(function(r){ useTk = r.tk; if (onTk) onTk(useTk); return (r.result && r.result.data) || []; })
+      /* Traz os anuncios de cada conjunto (effective_status) p/ mexer SO nos conjuntos com >=1 anuncio ATIVO. */
+      return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/adsets?fields=id,name,end_time,ads.limit(200){effective_status}&limit=200&access_token='+t); })
+        .then(function(r){
+          useTk = r.tk; if (onTk) onTk(useTk);
+          var all = (r.result && r.result.data) || [];
+          /* SO conjuntos com >=1 anuncio ATIVO dentro — ignora criativo com erro/rejeitado/pausado; basta 1 ativo. */
+          return all.filter(function(s){
+            var ads = (s.ads && s.ads.data) || [];
+            return ads.some(function(a){ return (a.effective_status || '').toUpperCase() === 'ACTIVE'; });
+          });
+        })
         .catch(function(){ return []; });
     }
     function postOne(s) {
@@ -3017,18 +3026,18 @@
     /* 1) CAMPANHA: aplica stop_time + CONFERE + REPETE ate 3x (Meta as vezes aceita e nao altera).
        2) CONJUNTOS: applyEndToAdsets (um a um + confere + repete). Match EXATO (sem +-1 dia -> acabou o
           falso "Aplicado" quando a Meta mantinha a data a 1 dia da pedida). */
-    applyCampaignStopTime(camp.id, endTs, camp._tk, wantDay, function(t){ useTk = t; camp._tk = t; })
+    /* ORDEM CORRIGIDA: estende os CONJUNTOS com anuncio ATIVO PRIMEIRO — o stop_time da CBO vitalicia e
+       limitado pelo end_time dos conjuntos, entao a campanha so consegue estender DEPOIS deles. */
+    applyEndToAdsets(camp.id, camp._tk, endIso, wantDay, function(t){ useTk = t; camp._tk = t; })
+      .then(function(st){
+        setTotal = st.total; setOk = st.ok; setFails = st.fails;
+        if (setTotal) report.push('Conjuntos: ' + setOk + '/' + setTotal);
+        setFails.forEach(function(m){ report.push('  - conjunto -> ' + m); });
+        return applyCampaignStopTime(camp.id, endTs, useTk, wantDay, function(t){ useTk = t; camp._tk = t; });
+      })
       .then(function(cs){
         campErr = cs.err;
         report.push('Campanha (stop_time): ' + (cs.ok ? 'OK' : ('NAO alterou -> ' + (cs.err || 'Meta manteve ' + (cs.campDay || '?')))));
-        return applyEndToAdsets(camp.id, useTk, endIso, wantDay, function(t){ useTk = t; }).then(function(st){
-          setTotal = st.total; setOk = st.ok; setFails = st.fails;
-          if (setTotal) report.push('Conjuntos: ' + setOk + '/' + setTotal);
-          setFails.forEach(function(m){ report.push('  - conjunto -> ' + m); });
-          return cs;
-        });
-      })
-      .then(function(cs){
         var campMatch = cs.ok, campDay = cs.campDay;
         var allSets = !setTotal || setOk >= setTotal;
         if (campMatch) camp.stop_time = endTs;
