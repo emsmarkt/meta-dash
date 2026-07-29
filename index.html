@@ -363,17 +363,17 @@
     /* RESET DA MANHA (9h BR): orcamento TOTAL com gasto de hoje < $120 E diario atual < $100 -> sobe o diario p/ $120 (via termino). */
     morningHours: [0, 9], morningMaxSpend: 120, morningMaxDaily: 100, morningDaily: 120,
     /* RESTAURAR: ultima mudanca de termino foi CORTAR e o ROAS voltou acima disso -> devolve o diario de antes. */
-    restoreRoas: 1.4,
+    restoreRoas: 1.5,
     /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
        Antes das 18h: dispara em 45 -> trava ~$60. A partir das 18h: dispara em 106 -> trava ~$140.
        As 18h o robo SOBE o teto das ja limitadas sem venda ($60 -> $140). */
     /* SEM venda: gasto >= limSpendTrigger($90) -> LIMITAR, trava ~$120 o DIA INTEIRO (90 x 1,33 ~= 120). */
     limSpendTrigger: 90, limSpendCap: 120,
-    limRoas: 1.4, // COM venda: ROAS <= isso -> LIMITAR, INDEPENDENTE do nº de vendas.
+    limRoas: 1.5, // COM venda: ROAS < isso -> CORTAR (reduz orcamento). Subiu de 1,4 -> 1,5 (24/07).
     limMinSpend: 1, // SO limita por ROAS se gasto > isso. Evita o falso ROAS 0 na virada (venda antes do gasto).
     remLimRoas: 1.5, remLimStart: 10, remLimEnd: 23, // robo REMOVE o limite sozinho se ROAS > 1,5 entre 10h e 23h BR.
     pauseCpc: 3, pauseSpend: 60, // SEM venda + CPC>$3 E 0 IC E gasto>$60 -> LIMITAR GASTO
-    pauseRoas: 1.5, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // 1-3 vd: pausa ROAS 1,4-1,5; ROAS>1,7 e 3+ vd -> +20%. Reativa: ROAS>1,5
+    pauseRoas: 1.7, escRoas: 1.7, escPct: 0.20, pauseSalesBreak: 3, // PAUSAR(esperar rebote) enquanto ROAS < 1,7. Subiu de 1,5 -> 1,7 (24/07). Reativa/AUMENTA: ROAS>=1,7
     excRoas: 2.0,        // ROAS >= isso = EXCELENTE -> escalar x5 ...
     excMinSales: 3,      // ... com pelo menos N vendas e usando o orcamento
     aumRoasLow: 1.5,     // ROAS bom: faixa de aumento proporcional (1.5 a 1.9)
@@ -1301,13 +1301,13 @@
           /* ROAS dos ult. 7 dias por campanha (p/ a sugestao AUMENTAR). Defensivo: se falhar, segue. */
           return fetchRoas7d(camps).catch(function(){});
         }).then(function() {
-          /* GASTO pelo RedTrack (mesma fonte e fuso das vendas). O custo do RedTrack vem em R$;
-             converte p/ US$ pelo cambio. Se a campanha nao casou no RedTrack, mantem o gasto do Meta. */
-          var fx = getFx();
+          /* GASTO = SEMPRE do FACEBOOK/Meta (unica fonte confiavel; o custo do RedTrack estava errado).
+             O _periodSpend ja vem do Meta (insights do batch, casado pelo ID da campanha). NAO sobrescreve
+             mais com o custo do RedTrack. O RedTrack fica SO p/ vendas, IC e a hora da venda.
+             Assim ROAS/CPA/CPI/Lucro e as REGRAS passam a usar o gasto REAL do Meta. */
           camps.forEach(function(c) {
-            c._metaSpend = c._periodSpend; /* guarda o do Meta p/ referencia */
-            if (c._conv && c._conv.cost > 0) { c._periodSpend = c._conv.cost / fx; c._spendSrc = 'rt'; }
-            else { c._spendSrc = 'meta'; }
+            c._metaSpend = c._periodSpend; /* = gasto do Meta (ja setado no batch) */
+            c._spendSrc = 'meta';
           });
           /* Estado compartilhado de regras aplicadas. (Aviso de 3 dias removido.) */
           return Promise.all([
@@ -2855,19 +2855,29 @@
       /* Conjuntos + status + anuncios. Extende conjunto NAO-pausado que tenha >=1 anuncio ATIVO dentro.
          Se os anuncios nao vierem (rate limit da Meta), extende assim mesmo desde que o conjunto esteja
          ativo — evita o "0/0" quando a Meta corta a busca dos anuncios (o print mostrava "anuncios NAO carregou"). */
-      /* "morto" = anuncio/conjunto que NAO entrega: rejeitado, pausado ou arquivado. Tudo o resto
-         (ACTIVE, PENDING_REVIEW, IN_PROCESS "em analise", WITH_ISSUES) conta como ATIVO. */
+      /* "morto" = NAO entrega: rejeitado, pausado ou arquivado. O resto (ACTIVE, PENDING_REVIEW,
+         IN_PROCESS "em analise", WITH_ISSUES) conta como ATIVO. */
       var DEAD = ['DISAPPROVED','PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED'];
-      return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/adsets?fields=id,name,end_time,effective_status,ads.limit(50){effective_status}&limit=200&access_token='+t); })
+      /* DUAS buscas SEPARADAS (a query aninhada `ads{...}` falhava inteira quando a Meta cortava a busca
+         dos anuncios -> 0 conjuntos). 1) CONJUNTOS (leve, confiavel). 2) ANUNCIOS (best-effort): se vier,
+         filtra p/ conjuntos com >=1 anuncio nao-morto; se a Meta cortar, APLICA em todos os conjuntos live. */
+      return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/adsets?fields=id,name,end_time,effective_status&limit=200&access_token='+t); })
         .then(function(r){
           useTk = r.tk; if (onTk) onTk(useTk);
           var all = (r.result && r.result.data) || [];
-          return all.filter(function(s){
-            if (DEAD.indexOf((s.effective_status || '').toUpperCase()) >= 0) return false; /* conjunto pausado/morto: pula */
-            var ads = (s.ads && s.ads.data) || null;
-            if (ads && ads.length) return ads.some(function(a){ return DEAD.indexOf((a.effective_status || '').toUpperCase()) < 0; }); /* >=1 anuncio nao-morto (inclui em analise) */
-            return true; /* anuncios nao carregaram, mas o conjunto esta ativo -> extende (fallback anti-0/0) */
-          });
+          var live = all.filter(function(s){ return DEAD.indexOf((s.effective_status || '').toUpperCase()) < 0; }); /* conjuntos nao-pausados */
+          if (!live.length) return [];
+          return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/ads?fields=adset_id,effective_status&limit=500&access_token='+t); })
+            .then(function(ar){
+              useTk = ar.tk; if (onTk) onTk(useTk);
+              var ads = (ar.result && ar.result.data) || null;
+              if (!ads || !ads.length) return live; /* NAO deu p/ saber status dos anuncios -> aplica em todos os live */
+              var liveSet = {};
+              ads.forEach(function(a){ if (a.adset_id && DEAD.indexOf((a.effective_status || '').toUpperCase()) < 0) liveSet[String(a.adset_id)] = true; });
+              var filtered = live.filter(function(s){ return liveSet[String(s.id)]; });
+              return filtered.length ? filtered : live; /* se o filtro zerar (dados estranhos), aplica nos live */
+            })
+            .catch(function(){ return live; }); /* erro na busca de anuncios -> aplica em todos os live */
         })
         .catch(function(){ return []; });
     }
