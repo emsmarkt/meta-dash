@@ -361,7 +361,7 @@
     accGoodMinSales: 2,     // regra do piso BOM = sales > accGoodMinSales (ou seja, >2 vendas)
     cutNoSaleSpend: 100, // SEM venda: gastou >= isso -> CORTA (+364d), a QUALQUER hora, 24h/dia. Unica regra de sem-venda.
     /* RESET DA MANHA (9h BR): orcamento TOTAL com gasto de hoje < $120 E diario atual < $100 -> sobe o diario p/ $120 (via termino). */
-    morningHours: [0, 9], morningMaxSpend: 120, morningMaxDaily: 100, morningDaily: 120,
+    /* (reset de orcamento virou AGENDA por horario no robo: 23:30->$100, 03:00->$50, 11:00->$500) */
     /* RESTAURAR: ultima mudanca de termino foi CORTAR e o ROAS voltou acima disso -> devolve o diario de antes. */
     restoreRoas: 1.5,
     /* SEM venda: teto por HORARIO (BR). Meta forca travar em ~1,33x o gasto -> gatilho = teto/1,33.
@@ -1277,7 +1277,9 @@
     var activePeriod = cboPeriod;
     /* Parametro de janela do periodo: preset (hoje/ontem/7/30) ou time_range (personalizado). */
     var _pd = periodDates();
-    var periodParam = (cboPeriod === 'custom' && _pd)
+    /* FUSO BR: usa time_range com as datas de Brasilia (meia-noite BR a 23:59 BR = 1 dia) em vez de
+       date_preset (que usa o fuso da CONTA). date_preset so p/ lifetime (sem _pd). */
+    var periodParam = _pd
       ? ('time_range=' + encodeURIComponent(JSON.stringify({ since: _pd.since, until: _pd.until })))
       : ('date_preset=' + activePeriod);
     /* date_preset=lifetime retorna vazio em algumas campanhas. Usamos um time_range,
@@ -1714,13 +1716,7 @@
       var neR = brDatePlus(Math.max(1, Math.ceil(rem / prevD)));
       return { action: 'RESTAURAR diario p/ $' + Math.round(prevD) + ' (era antes do CORTAR — ROAS ' + roasFmt + ')', cls: 'd-good', target: prevD, newEnd: neR, key: 'RESTAURAR', sig: 'RESTAURAR' };
     }
-    /* RESET (morningHours = 00h e 9h BR): campanha de orcamento TOTAL com gasto de HOJE
-       < morningMaxSpend($120) E ritmo diario atual < morningMaxDaily($100) -> sobe o DIARIO p/
-       morningDaily($120) via termino. Devolve budget a quem ficou estrangulado, pra ter chance no dia. */
-    if (RULES.morningHours.indexOf(brHour()) >= 0 && sp < RULES.morningMaxSpend && curDaily < RULES.morningMaxDaily && rem > 0) {
-      var neM = brDatePlus(Math.max(1, Math.ceil(rem / RULES.morningDaily)));
-      return { action: 'SUBIR DIARIO p/ $' + RULES.morningDaily + ' (reset ' + brHour() + 'h — gasto $' + Math.round(sp) + ', diario atual $' + Math.round(curDaily) + ')', cls: 'd-good', target: RULES.morningDaily, newEnd: neM, key: 'SUBIR_DIARIO', sig: 'SUBIR_DIARIO' };
-    }
+    /* (O reset de orcamento virou AGENDA por horario no ROBO — 23:30/03:00/11:00 BR. Nao e mais sugestao do dash.) */
     /* AUMENTAR (so SUGESTAO): DEPOIS das aumHourBR(20h) BR, ROAS de HOJE >= pauseRoas(1,5)
        E ROAS dos ult. 7 dias > aumRoas7dMin(1,4) -> sugere subir o diario p/ aumMult(1,5)x o atual.
        <aumMaxSales(5) vendas: sempre. Campea (>=5 vendas): SO se nao houve aumento nos ult. aumCampeaDays(3) dias. */
@@ -2139,7 +2135,7 @@
   /* ===== AUTO-APPLY (opt-in): dashboard aplica sozinho as regras seguras apos cada carga ===== */
   function getAutoApply() { try { return localStorage.getItem('md_autoapply') === '1'; } catch(e) { return false; } }
   /* Regras que o dashboard PODE aplicar sozinho — as mesmas do robo. AUMENTAR/ATIVAR NAO (decisao deliberada). */
-  var AUTO_APPLY_KEYS = { PAUSAR: 1, CORTAR: 1, REMLIMITE: 1, SUBIR_DIARIO: 1, RESTAURAR: 1 };
+  var AUTO_APPLY_KEYS = { PAUSAR: 1, CORTAR: 1, REMLIMITE: 1, RESTAURAR: 1 };
   var _autoApplyRunning = false;
   function autoApplyRules() {
     if (_autoApplyRunning) return;
