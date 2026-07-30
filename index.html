@@ -1214,16 +1214,20 @@
     var chain = fetchFxLive().catch(function(){}); /* puxa a cotacao USD/BRL ao vivo ANTES de converter os custos */
     tks.forEach(function(tk) {
       chain = chain.then(function() {
-        /* fetchAllAdAccounts: diretas + as dos Business Managers (antes faltavam ~67 contas). */
-        return fetchAllAdAccounts(tk, 'name,account_status').then(function(res) {
+        /* Traz o GASTO dos ult. 7 dias JUNTO (insights aninhado) p/ filtrar so contas COM atividade
+           — nao puxar 200+ contas zeradas na aba CBO Calculator (deixava o dash lento e estourava rate limit). */
+        return fetchAllAdAccounts(tk, 'name,account_status,insights.date_preset(last_7d){spend}').then(function(res) {
           (res.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
         }).catch(function(e) { console.warn(e); });
       });
     });
     chain.then(function() {
-      /* Inclui contas nao-ativas tambem (status 2 bloqueada, 3 pendencia) para dar visibilidade. */
-      var accounts = Object.values(map);
-      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#f85149">Nenhuma conta encontrada.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
+      /* SO contas com GASTO nos ultimos 7 dias (gasto 0 nao entra) — dash muito mais rapido e sem rate limit. */
+      var accounts = Object.values(map).filter(function(a){
+        var sp = 0; try { sp = (a.insights && a.insights.data && a.insights.data[0]) ? (parseFloat(a.insights.data[0].spend) || 0) : 0; } catch(e){}
+        a._sp7d = sp; return sp > 0;
+      });
+      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#f85149">Nenhuma conta com gasto nos ultimos 7 dias.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
       document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando campanhas CBO em '+accounts.length+' contas...</td></tr>';
       var camps = [];
       var idx = 0;
@@ -2843,10 +2847,17 @@
      estrangula e alguns POSTs falham), depois CONFERE lendo de volta e REPETE so nos que NAO pegaram
      (ate 3 rodadas). Antes era 1 tentativa em paralelo: conjunto que falhava ficava pra tras em SILENCIO
      (campanha ia p/ a data nova e o conjunto ficava na antiga -> encerrava sozinho). Devolve {total, ok, fails}. */
-  function applyEndToAdsets(campId, tk, endIso, wantDay, onTk) {
+  function applyEndToAdsets(campId, tk, endIso, wantDay, onTk, preAdsets) {
     var st = { total: 0, ok: 0, fails: [] };
     var useTk = tk;
     var dayOf = function(v){ if (!v) return null; return (typeof v === 'string') ? v.slice(0,10) : new Date(v*1000).toISOString().split('T')[0]; };
+    var DEAD_ADS = ['DISAPPROVED','PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED'];
+    /* FALLBACK: conjuntos JA carregados na tabela (camp._adsets) filtrados p/ os nao-pausados. Usado quando
+       a Meta CORTA a busca dos conjuntos ("anuncios NAO carregou") — muda a data mesmo assim, como pedido. */
+    var fromPre = function(){
+      return ((preAdsets || []).filter(function(s){ return DEAD_ADS.indexOf((s.effective_status || '').toUpperCase()) < 0; }))
+        .map(function(s){ return { id: s.id, name: s.name || s.id, end_time: s.end_time }; });
+    };
     function listSets() {
       /* Conjuntos + status + anuncios. Extende conjunto NAO-pausado que tenha >=1 anuncio ATIVO dentro.
          Se os anuncios nao vierem (rate limit da Meta), extende assim mesmo desde que o conjunto esteja
@@ -2862,7 +2873,7 @@
           useTk = r.tk; if (onTk) onTk(useTk);
           var all = (r.result && r.result.data) || [];
           var live = all.filter(function(s){ return DEAD.indexOf((s.effective_status || '').toUpperCase()) < 0; }); /* conjuntos nao-pausados */
-          if (!live.length) return [];
+          if (!live.length) return fromPre(); /* busca vazia -> usa os conjuntos ja carregados na tabela */
           return withTokenFallback(useTk, function(t){ return fjThrow(API+'/'+campId+'/ads?fields=adset_id,effective_status&limit=500&access_token='+t); })
             .then(function(ar){
               useTk = ar.tk; if (onTk) onTk(useTk);
@@ -2875,7 +2886,7 @@
             })
             .catch(function(){ return live; }); /* erro na busca de anuncios -> aplica em todos os live */
         })
-        .catch(function(){ return []; });
+        .catch(function(){ return fromPre(); }); /* a Meta cortou a busca dos conjuntos -> usa os ja carregados */
     }
     function postOne(s) {
       return withTokenFallback(useTk, function(t){ return postForm(s.id, t, { end_time: endIso }); })
@@ -3039,7 +3050,7 @@
        stop_time da CBO vitalicia (aceita e mantem a data antiga) — por isso o pedido na campanha dava
        "erro" mesmo com os conjuntos ja aplicados no gerenciador. Agora o SUCESSO e baseado nos CONJUNTOS;
        o stop_time da campanha e tentado so em SEGUNDO PLANO (best-effort, NUNCA falha a operacao). */
-    applyEndToAdsets(camp.id, camp._tk, endIso, wantDay, function(t){ useTk = t; camp._tk = t; })
+    applyEndToAdsets(camp.id, camp._tk, endIso, wantDay, function(t){ useTk = t; camp._tk = t; }, camp._adsets)
       .then(function(st){
         setTotal = st.total; setOk = st.ok; setFails = st.fails;
         if (setTotal) report.push('Conjuntos: ' + setOk + '/' + setTotal);
