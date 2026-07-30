@@ -1327,7 +1327,7 @@
       }
       var batch = camps.slice(idx, idx+6); idx += 6;
       return Promise.all(batch.map(function(c) {
-        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&time_range='+totalRange+'&access_token='+c._tk;
+        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr,actions&time_range='+totalRange+'&access_token='+c._tk;
         /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
         var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
         /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
@@ -1336,7 +1336,7 @@
         var calls = isLifetime
           ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
           : [fj(totalUrl),
-             fj(API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&access_token='+c._tk),
+             fj(API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr,actions&'+periodParam+'&access_token='+c._tk),
              fj(adsUrl), fj(adsetsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
@@ -1344,12 +1344,15 @@
           var adsRes;
           /* CPC de LINK (cost_per_inline_link_click) = "CPC correto" do media buyer = gasto / cliques no LINK,
              NAO o cpc de todos os cliques (que conta curtida/comentario/expandir). Guarda tbm os cliques de link. */
+          /* COMPRAS pelo Meta (cross-check anti-corte-errado): se o Meta viu compra, a campanha NAO e "sem venda". */
+          var metaPurch = function(row){ var p = 0; if (row && row.actions) row.actions.forEach(function(a){ if (/purchase/i.test(a.action_type || '')) p = Math.max(p, parseInt(a.value) || 0); }); return p; };
           if (isLifetime) {
             c._periodSpend = c._spend;
             c._clicks = t ? (parseInt(t.clicks) || 0) : 0;
             c._linkClicks = t ? (parseInt(t.inline_link_clicks) || 0) : 0;
             c._cpc = t ? (parseFloat(t.cost_per_inline_link_click) || 0) : 0;
             c._ctr = t ? (parseFloat(t.inline_link_click_ctr) || 0) : 0; /* CTR de link (%), da Meta */
+            c._metaPurch = metaPurch(t);
             adsRes = res[1];
           } else {
             var p = res[1].data && res[1].data[0];
@@ -1358,6 +1361,7 @@
             c._linkClicks = p ? (parseInt(p.inline_link_clicks) || 0) : 0;
             c._cpc = p ? (parseFloat(p.cost_per_inline_link_click) || 0) : 0;
             c._ctr = p ? (parseFloat(p.inline_link_click_ctr) || 0) : 0;
+            c._metaPurch = metaPurch(p);
             adsRes = res[2];
           }
           var ads = (adsRes && adsRes.data) ? adsRes.data : [];
@@ -1733,8 +1737,9 @@
       var _cmp = sales >= RULES.aumMaxSales ? ' campea s/ aumento ha ' + (_incDays >= 9999 ? 'nunca' : _incDays + 'd') + ',' : '';
       return { action: 'AUMENTAR diario p/ $' + Math.round(tgtA) + ' (' + RULES.aumMult + 'x —' + _cmp + ' ROAS hoje ' + roasFmt + ', 7d ' + (camp._roas7d || 0).toFixed(2).replace('.', ',') + ', apos ' + RULES.aumHourBR + 'h)', cls: 'd-good', target: tgtA, newEnd: neA, key: 'AUMENTAR', sig: 'AUMENTAR' };
     }
-    /* SEM VENDA hoje: gastou >= cutNoSaleSpend($100) -> CORTA (+364d), a QUALQUER hora, 24h/dia.
-       Senao Coletando (ainda dando o dia p/ vender). NAO existe mais regra por horario aqui. */
+    /* SEM VENDA hoje: gastou >= cutNoSaleSpend($100) -> CORTA (+364d). ⚠️ SO corta se o Meta TAMBEM nao viu
+       compra (camp._metaPurch === 0) — cross-check anti-corte-errado (campanha que vendeu mas nao casou no RedTrack). */
+    if (sales === 0 && (camp._metaPurch || 0) > 0) return { action: 'Coletando — Meta viu ' + camp._metaPurch + ' compra(s) (RedTrack não casou)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
     if (sales === 0 && sp >= RULES.cutNoSaleSpend) return { action: 'CORTAR (+' + RULES.cutDays + 'd — $' + Math.round(sp) + ' hoje SEM venda)', cls: 'd-bad', target: cortarTarget, newEnd: cortarEnd, key: 'CORTAR', sig: 'CORTAR' };
     if (sales === 0) return { action: 'Coletando (sem venda)', cls: 'd-warn', target: null, newEnd: null, key: 'COLETANDO', sig: null };
     /* COM VENDA e menos de aumMaxSales(5) vendas: ROAS < limRoas(1,4) -> CORTAR (+cutDays, reduz ritmo);
