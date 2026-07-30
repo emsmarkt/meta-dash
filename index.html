@@ -165,6 +165,8 @@
       <label id="autoApplyWrap" title="Interruptor LIVE/DRY do robô. LIGADO = o robô APLICA as regras de verdade nas campanhas a cada 5 min (APPLY_MODE=live). DESLIGADO = só simula (dry), você aplica na mão. Salva no Worker (vale para todos os dispositivos e sobrevive a deploy)." style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;cursor:pointer;user-select:none;padding:4px 8px;border:1px solid #30363d;border-radius:6px">
         <span class="md-switch"><input type="checkbox" id="autoApplyChk"><span class="md-slider"></span></span> <span id="autoApplyTxt" style="font-weight:600">Robô: —</span>
       </label>
+      <button class="btn" id="btnPauseAllCBO" title="PAUSA todas as campanhas com CBO no nome que estão ativas (em massa, no Meta)" style="border-color:#f85149;color:#f85149">&#9208; Pausar tudo (CBO)</button>
+      <button class="btn" id="btnActivateAllCBO" title="ATIVA todas as campanhas CBO que estão pausadas (em massa, no Meta)" style="border-color:#3fb950;color:#3fb950">&#9654; Ativar tudo (CBO)</button>
     </div>
     <div class="tbl-wrap">
       <table>
@@ -3251,6 +3253,42 @@
   document.getElementById('btnRefresh').addEventListener('click', function() { if (curTab === 'cbo') loadCBO(); else if (curTab === 'abo') loadABO(); else load(); });
   document.getElementById('btnTokens').addEventListener('click', openModal);
   document.getElementById('btnLoadCBO').addEventListener('click', loadCBO);
+  /* PAUSAR/ATIVAR TUDO (so campanhas com CBO no nome). Age nas campanhas JA carregadas (cboData). */
+  function bulkCBOStatus(newStatus) {
+    if (!cboData || !cboData.length) { alert('Carregue as campanhas CBO primeiro (botão "Carregar campanhas CBO").'); return; }
+    var want = newStatus === 'PAUSED' ? 'ACTIVE' : 'PAUSED'; /* pausa as ativas / ativa as pausadas */
+    var verbo = newStatus === 'PAUSED' ? 'PAUSAR' : 'ATIVAR';
+    var targets = cboData.filter(function(c) {
+      var nu = (c.name || '').toUpperCase();
+      var st = (c.status || c.effective_status || '').toUpperCase();
+      /* SO campanhas com CBO no nome; pra pausar pega tudo que nao esta pausado, pra ativar so as pausadas. */
+      if (nu.indexOf('CBO') < 0) return false;
+      return newStatus === 'PAUSED' ? (st !== 'PAUSED') : (st === 'PAUSED');
+    });
+    if (!targets.length) { alert('Nenhuma campanha CBO ' + (newStatus === 'PAUSED' ? 'ativa p/ pausar' : 'pausada p/ ativar') + '.'); return; }
+    if (!confirm(verbo + ' ' + targets.length + ' campanha(s) CBO no Meta?\nAção EM MASSA — confirma?')) return;
+    var btn = document.getElementById(newStatus === 'PAUSED' ? 'btnPauseAllCBO' : 'btnActivateAllCBO');
+    var origTxt = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; }
+    var i = 0, ok = 0, fail = 0;
+    (function next() {
+      if (i >= targets.length) {
+        if (btn) { btn.disabled = false; btn.innerHTML = origTxt; }
+        if (fail) notifyErr(verbo + ' em massa: ' + ok + '/' + targets.length + ' ok', fail + ' campanha(s) falharam. Tente de novo nas que ficaram.');
+        else notifyOk(verbo + ' em massa concluído', ok + ' campanha(s) CBO ' + (newStatus === 'PAUSED' ? 'pausadas' : 'ativadas') + '.');
+        renderCBO();
+        return;
+      }
+      var c = targets[i++];
+      if (btn) btn.innerHTML = verbo + '… ' + i + '/' + targets.length;
+      withTokenFallback(c._tk, function(tk) { return postForm(c.id, tk, { status: newStatus }); })
+        .then(function(r) { c._tk = r.tk; c.status = newStatus; c.effective_status = newStatus; ok++; })
+        .catch(function() { fail++; })
+        .then(function() { setTimeout(next, 250); }); /* espacado p/ nao estourar rate limit */
+    })();
+  }
+  document.getElementById('btnPauseAllCBO').addEventListener('click', function() { bulkCBOStatus('PAUSED'); });
+  document.getElementById('btnActivateAllCBO').addEventListener('click', function() { bulkCBOStatus('ACTIVE'); });
   /* INTERRUPTOR LIVE/DRY do robo: ON = robo APLICA de verdade (APPLY_MODE=live via KV);
      OFF = robo so simula (dry). Le/grava a chave `applyMode` no Worker (vence o wrangler, sobrevive a deploy). */
   (function(){
