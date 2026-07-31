@@ -108,7 +108,53 @@
 #mdb .sale-row .sale-r{font-variant-numeric:tabular-nums;text-align:right;min-width:38px;font-weight:600;font-size:12px}
 #mdb .sale-row .sale-n{color:#57606a;text-align:right;flex:1}
 #mdb .sale-tip-ft{color:#656d76;font-size:10px;margin-top:5px;padding-top:4px;
-  border-top:1px solid #e4e8ee;white-space:normal}</style>
+  border-top:1px solid #e4e8ee;white-space:normal}
+/* ===================== POLIMENTO VISUAL (tema claro) — legibilidade + elegancia ===================== */
+#mdb{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#1c2024;background:#fbfcfd}
+html,body{background:#fbfcfd!important}
+#mdb .hdr{padding:16px 0 18px;margin-bottom:22px;border-bottom:1px solid #e8ebf0}
+#mdb .hdr h1{font-size:21px;font-weight:700;letter-spacing:-.015em}
+/* metric cards: sombra suave, rotulo em maiuscula, valor tabular */
+#mdb .mc{background:#fff;border-color:#e8ebf0;box-shadow:0 1px 2px rgba(27,31,36,.05);transition:box-shadow .16s,transform .1s,border-color .16s}
+#mdb .mc:hover{box-shadow:0 6px 18px rgba(27,31,36,.09);border-color:#d6dbe2;transform:translateY(-1px)}
+#mdb .mc-l{text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;font-weight:700;color:#6a7280}
+#mdb .mc-v{font-size:27px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+/* tabela: mais respiro, cabecalho solido, zebra, numeros tabulares */
+#mdb .tbl-wrap{background:#fff;border-color:#e8ebf0;box-shadow:0 1px 2px rgba(27,31,36,.04),0 4px 16px rgba(27,31,36,.05)}
+#mdb th{font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#6a7280;padding:11px 15px;background:#f4f6f9;border-bottom:1px solid #e4e8ee}
+#mdb td{padding:11px 15px;border-bottom:1px solid #eef1f4;font-variant-numeric:tabular-nums}
+#mdb td:first-child{font-weight:600;color:#1c2024}
+#mdb tbody tr:nth-child(even) td{background:#f8fafc}
+#mdb tbody tr:hover td{background:#eaf3fd}
+#mdb tbody tr:hover td:first-child{background:#eaf3fd}
+#mdb thead th:first-child{background:#f4f6f9}
+#mdb tbody td:first-child{background:#fbfcfd}
+/* abas segmentadas mais nitidas */
+#mdb .tabs{background:#eef1f5;padding:3px}
+#mdb .tab-btn{font-weight:600;color:#5a626b}
+#mdb .tab-btn:hover{color:#1c2024}
+#mdb .tab-btn.on{background:#fff;color:#0969da;box-shadow:0 1px 2px rgba(27,31,36,.14)}
+/* pills: ativo azul solido */
+#mdb .pill{font-weight:600}
+#mdb .pill:hover{border-color:#0969da;color:#0969da}
+#mdb .pill.on{background:#0969da;border-color:#0969da;color:#fff}
+/* botoes: fundo branco com leve sombra */
+#mdb .btn{background:#fff;box-shadow:0 1px 1px rgba(27,31,36,.05);font-weight:600}
+#mdb .btn:hover{background:#f6f8fa;border-color:#c2c9d1}
+/* badges de status mais firmes */
+#mdb .badge{font-weight:700;padding:3px 10px;letter-spacing:.01em}
+/* grupos de coluna (FACEBOOK / REDTRACK) */
+#mdb .th-group{font-weight:800;letter-spacing:.07em;color:#8a929c;background:#fff;border-bottom:1px solid #e4e8ee}
+/* caixa formula/info com barra azul */
+#mdb .cbo-info{background:#f4f8fe;border-color:#d3e3fb;border-left:3px solid #0969da;border-radius:0 8px 8px 0;color:#4a5563}
+#mdb .cbo-info strong{color:#0d2c54}
+/* halo de foco nos inputs */
+#mdb .cbo-inp:focus,#mdb .srch:focus,#mdb .cbo-date:focus,#mdb .setup-inp:focus,#mdb .tk-inp:focus{box-shadow:0 0 0 3px rgba(9,105,218,.13)}
+/* scrollbar clara e fina */
+#mdb .tbl-wrap::-webkit-scrollbar-thumb{background:#cdd4dc}
+#mdb .tbl-wrap::-webkit-scrollbar-thumb:hover{background:#b7bfc8}
+/* valores positivos/negativos e sugestoes um tico mais fortes */
+#mdb .d-good{color:#127a33}#mdb .d-bad{color:#c31c28}#mdb .d-warn{color:#8a5a00}</style>
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
