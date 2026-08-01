@@ -1723,18 +1723,8 @@ html,body{background:#fbfcfd!important}
      (nao corta nem mexe, mesmo que tenha gastado num burst sem venda na ultima hora).
      So corta/limita quem esta ACIMA do teto ou sem venda. */
   function suggestRule(camp, mood) {
-    /* CP_TST (TESTE): nome com "TST" ou "TESTE" -> FORA das regras de ROAS/pausa/escala. UNICA acao: gasto SEM
-       venda >= cutNoSaleSpend($100) -> CORTAR (+364d). CP_VALD (validada) e as demais seguem as regras normais. */
-    var _nmU = (camp.name || '').toUpperCase();
-    if (_nmU.indexOf('TST') >= 0 || _nmU.indexOf('TESTE') >= 0) {
-      var spT = camp._periodSpend || 0, salesT = (camp._conv ? camp._conv.sales : 0) || 0;
-      if (salesT === 0 && spT >= RULES.cutNoSaleSpend) {
-        var remT = remainingOf(camp);
-        return { action: 'CORTAR (+' + RULES.cutDays + 'd — teste $' + Math.round(spT) + ' s/ venda)', cls: 'd-bad', target: (remT > 0 ? remT / RULES.cutDays : RULES.floorDaily), newEnd: brDatePlus(RULES.cutDays), key: 'CORTAR', sig: 'CORTAR' };
-      }
-      var roasT = spT > 0 ? (salesT * 260) / spT : 0;
-      return { action: 'TESTE — só corta $' + RULES.cutNoSaleSpend + ' s/ venda' + (salesT ? (' (' + salesT + ' venda, ROAS ' + roasT.toFixed(2).replace('.', ',') + ')') : ''), cls: 'd-warn', target: null, newEnd: null, key: salesT ? 'MANTER' : 'COLETANDO', sig: null };
-    }
+    /* CP_TST (teste) e CP_VALD (validada) seguem as MESMAS regras de ROAS/sem-venda abaixo (31/07). A unica
+       diferenca fica no reset de orcamento do robo: TST nao entra no slot 03:00 (ver runBudgetSchedule no worker). */
     /* CBO de ORCAMENTO DIARIO: mecanica diferente (nao tem saldo/termino; o diario E o proprio orcamento).
        Entra so p/ VISUALIZAR — sem regra, sem botao. O robo tbm nao toca (ele exige lifetime_budget). */
     if (!camp.lifetime_budget && camp.daily_budget) {
