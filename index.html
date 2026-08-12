@@ -745,7 +745,11 @@ html,body{background:#fbfcfd!important}
     if (!camps || !camps.length) return 'none';
     var cbo = camps.filter(function(c){ return c.name && c.name.toUpperCase().indexOf('CBO') >= 0; });
     if (!cbo.length) return 'none';
-    if (cbo.some(function(c){ return (c.status||'').toUpperCase() === 'ACTIVE'; })) return 'active';
+    /* "ativa" = CBO cujo status EFETIVO NAO esta parado/arquivado (inclui ACTIVE, IN_PROCESS "em analise",
+       WITH_ISSUES, PENDING_REVIEW). Antes so olhava c.status==='ACTIVE' e o filtro nem trazia IN_PROCESS/
+       WITH_ISSUES -> CBO ativa em analise/com aviso nao marcava. */
+    var DEAD = ['PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED','DISAPPROVED'];
+    if (cbo.some(function(c){ return DEAD.indexOf((c.effective_status||c.status||'').toUpperCase()) < 0; })) return 'active';
     return 'paused';
   }
 
@@ -824,7 +828,7 @@ html,body{background:#fbfcfd!important}
         var batch = accounts.slice(idx, idx+6); idx += 6;
         return Promise.all(batch.map(function(acc) {
           return Promise.all([
-            fj(API+'/'+acc.id+'/campaigns?fields=name,status,objective&effective_status=["ACTIVE","PAUSED"]&limit=100&access_token='+acc._tk),
+            fj(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk),
             fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=today&level=account&access_token='+acc._tk),
             fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=yesterday&level=account&access_token='+acc._tk),
             fj(API+'/'+acc.id+'/insights?fields=spend&date_preset=last_7d&level=account&access_token='+acc._tk),
@@ -1723,8 +1727,11 @@ html,body{background:#fbfcfd!important}
      (nao corta nem mexe, mesmo que tenha gastado num burst sem venda na ultima hora).
      So corta/limita quem esta ACIMA do teto ou sem venda. */
   function suggestRule(camp, mood) {
-    /* CP_TST (teste) e CP_VALD (validada) seguem as MESMAS regras de ROAS/sem-venda abaixo (31/07). A unica
-       diferenca fica no reset de orcamento do robo: TST nao entra no slot 03:00 (ver runBudgetSchedule no worker). */
+    /* CP_VALD (validada): FORA das regras de CORTAR/ROAS (01/08). Robô NÃO mexe — gestão MANUAL (só aviso 1x/dia
+       no Telegram). CP_TST segue as regras normais abaixo. */
+    if ((camp.name || '').toUpperCase().indexOf('VALD') >= 0) {
+      return { action: 'VALD — gestão manual (robô só avisa 1x/dia)', cls: 'd-warn', target: null, newEnd: null, key: 'VALD', sig: null };
+    }
     /* CBO de ORCAMENTO DIARIO: mecanica diferente (nao tem saldo/termino; o diario E o proprio orcamento).
        Entra so p/ VISUALIZAR — sem regra, sem botao. O robo tbm nao toca (ele exige lifetime_budget). */
     if (!camp.lifetime_budget && camp.daily_budget) {
