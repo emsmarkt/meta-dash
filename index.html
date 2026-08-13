@@ -753,6 +753,20 @@ html,body{background:#fbfcfd!important}
     if (cbo.some(function(c){ return DEAD.indexOf((c.effective_status||c.status||'').toUpperCase()) < 0; })) return 'active';
     return 'paused';
   }
+  /* "Livre" = conta SEM nenhuma campanha de VENDAS ativa (CBO, ABO ou qualquer venda) -> livre p/ subir nova.
+     "ativa" = status efetivo NAO parado/arquivado (inclui ACTIVE, IN_PROCESS "em analise", WITH_ISSUES). */
+  function isLivre(camps) {
+    if (!camps || !camps.length) return true;
+    var DEAD = ['PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED','DISAPPROVED'];
+    var ac = camps.filter(function(c){ return DEAD.indexOf((c.effective_status||c.status||'').toUpperCase()) < 0; });
+    if (!ac.length) return true;
+    var hasSales = ac.some(function(c){
+      var n = (c.name || '').toLowerCase();
+      return SALES.indexOf(c.objective) >= 0 || n.indexOf('cbo')>=0 || n.indexOf('abo')>=0 || n.indexOf('reat')>=0
+          || n.indexOf('tst')>=0 || n.indexOf('vald')>=0 || n.indexOf('escala')>=0 || n.indexOf('venda')>=0;
+    });
+    return !hasSales;
+  }
 
   function showSetup() {
     document.getElementById('mainContent').innerHTML = '<div class="setup-box"><h2>&#128274; Configure seu acesso</h2><p>Cole seu token do Meta Ads abaixo. Ele sera salvo apenas no seu navegador e nunca ficara visivel no codigo da pagina.</p><input class="setup-inp" id="setupTk" type="password" placeholder="EAAUkGiht2h..."><br><button class="btn btn-blue" id="btnSetupSave" style="width:100%;justify-content:center;margin-top:8px">Conectar e carregar contas</button><p style="margin-top:12px;font-size:11px;color:#656d76">Voce pode adicionar mais tokens depois pelo botao &#9881; Tokens no topo.</p></div>';
@@ -764,7 +778,7 @@ html,body{background:#fbfcfd!important}
   }
 
   function renderShell() {
-    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#1a7f37" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#cf222e" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#9a6700" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto <select id="spendPerSel" style="background:#ffffff;color:#1f2328;border:1px solid #d0d7de;border-radius:4px;font-size:11px;padding:1px 4px;cursor:pointer"><option value="this_month">m&ecirc;s atual</option><option value="last_month">m&ecirc;s passado</option><option value="custom">personalizado</option></select></div><div class="mc-v" id="mSpend">---</div><div class="mc-s" id="mSpendSub">este m&ecirc;s &middot; todas as contas</div><div id="spendCustomBox" style="display:none;margin-top:6px"><input type="date" id="spendCustomFrom" class="cbo-date" style="width:118px;font-size:11px;cursor:pointer">&nbsp;<input type="date" id="spendCustomTo" class="cbo-date" style="width:118px;font-size:11px;cursor:pointer"> <button class="btn" id="spendCustomApply" style="font-size:11px;padding:2px 8px">Aplicar</button></div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span class="pill" data-f="cbopaused">&#9888; CBO parada <b id="cCboP"></b></span><span style="width:1px;height:20px;background:#d0d7de;margin:0 4px"></span><span style="font-size:12px;color:#656d76;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
+    document.getElementById('mainContent').innerHTML = '<div class="metrics"><div class="mc"><div class="mc-l">Total contas</div><div class="mc-v" id="mTotal">---</div><div class="mc-s">carregadas</div></div><div class="mc"><div class="mc-l">Ativas</div><div class="mc-v" style="color:#1a7f37" id="mAtivas">---</div><div class="mc-s">ACTIVE</div></div><div class="mc"><div class="mc-l">Prob. pagamento</div><div class="mc-v" style="color:#cf222e" id="mProb">---</div><div class="mc-s">DISABLED+UNSETTLED</div></div><div class="mc"><div class="mc-l">Sem cartao</div><div class="mc-v" style="color:#9a6700" id="mSemCard">---</div></div><div class="mc"><div class="mc-l">Gasto <select id="spendPerSel" style="background:#ffffff;color:#1f2328;border:1px solid #d0d7de;border-radius:4px;font-size:11px;padding:1px 4px;cursor:pointer"><option value="this_month">m&ecirc;s atual</option><option value="last_month">m&ecirc;s passado</option><option value="custom">personalizado</option></select></div><div class="mc-v" id="mSpend">---</div><div class="mc-s" id="mSpendSub">este m&ecirc;s &middot; todas as contas</div><div id="spendCustomBox" style="display:none;margin-top:6px"><input type="date" id="spendCustomFrom" class="cbo-date" style="width:118px;font-size:11px;cursor:pointer">&nbsp;<input type="date" id="spendCustomTo" class="cbo-date" style="width:118px;font-size:11px;cursor:pointer"> <button class="btn" id="spendCustomApply" style="font-size:11px;padding:2px 8px">Aplicar</button></div></div></div><div class="filters"><span class="pill on" data-f="all">Todas <b id="cAll"></b></span><span class="pill" data-f="none">Sem campanha <b id="cNone"></b></span><span class="pill" data-f="engonly">So engajamento <b id="cEngO"></b></span><span class="pill" data-f="both">Engaj+Vendas <b id="cBoth"></b></span><span class="pill" data-f="noeng">Falta engajamento <b id="cNoE"></b></span><span class="pill" data-f="warn">&#9888; Pagamento <b id="cWarn"></b></span><span class="pill" data-f="cbopaused">&#9888; CBO parada <b id="cCboP"></b></span><span class="pill" data-f="livre" title="Contas SEM nenhuma campanha de vendas ATIVA (CBO/ABO/venda) — livre p/ subir nova">&#128994; SEM CBO - Livre <b id="cLivre"></b></span><span style="width:1px;height:20px;background:#d0d7de;margin:0 4px"></span><span style="font-size:12px;color:#656d76;align-self:center">Conta:</span><span class="pill afpill on" data-af="all">Todas</span><span class="pill afpill" data-af="active">Ativas</span><span class="pill afpill" data-af="disabled">Desativadas</span><input class="srch" id="srch" type="text" placeholder="Buscar conta..."></div><div class="tbl-wrap"><table><thead><tr><th>Conta</th><th>Status</th><th>Campanhas</th><th>Cartao</th><th>Limite diario</th><th>Hoje</th><th>Ontem</th><th>7 dias</th><th>Mes atual</th><th>Mes passado</th><th>Acao</th></tr></thead><tbody id="tbody"><tr><td colspan="11" class="ld"><span class="spin"></span>Carregando...</td></tr></tbody></table></div>';
     document.getElementById('mainContent').addEventListener('click', function(e) {
       var pill = e.target.closest ? e.target.closest('.pill') : null;
       if (!pill) return;
@@ -850,6 +864,7 @@ html,body{background:#fbfcfd!important}
             acc._card = (fs && fs.display_string) ? fs.display_string : null;
             acc._cat = classify(acc._camps);
             acc._cboState = cboState(acc._camps);
+            acc._livre = isLivre(acc._camps);
           }).catch(function() { acc._camps = []; acc._sToday = 0; acc._sYest = 0; acc._s7d = 0; acc._sMon = 0; acc._sLmon = 0; acc._dl = null; });
         })).then(nextBatch);
       }
@@ -901,8 +916,8 @@ html,body{background:#fbfcfd!important}
     document.getElementById('mSpend').textContent = tot > 0 ? fmtUSD(tot) : (spendPeriod === 'custom' ? 'escolha as datas' : '---');
     var _sub = document.getElementById('mSpendSub');
     if (_sub) _sub.textContent = (spendPeriod === 'last_month' ? 'mês passado' : (spendPeriod === 'custom' ? 'personalizado' : 'este mês')) + ' · todas as contas';
-    var ct = {none:0,engonly:0,both:0,noeng:0,warn:0,cbopaused:0};
-    acc.forEach(function(a){ ct[a._cat]=(ct[a._cat]||0)+1; if(a.account_status===3)ct.warn++; if(a._cboState==='paused')ct.cbopaused++; });
+    var ct = {none:0,engonly:0,both:0,noeng:0,warn:0,cbopaused:0,livre:0};
+    acc.forEach(function(a){ ct[a._cat]=(ct[a._cat]||0)+1; if(a.account_status===3)ct.warn++; if(a._cboState==='paused')ct.cbopaused++; if(a._livre)ct.livre++; });
     document.getElementById('cAll').textContent = '('+acc.length+')';
     document.getElementById('cNone').textContent = ct.none?'('+ct.none+')':'';
     document.getElementById('cEngO').textContent = ct.engonly?'('+ct.engonly+')':'';
@@ -910,13 +925,14 @@ html,body{background:#fbfcfd!important}
     document.getElementById('cNoE').textContent = ct.noeng?'('+ct.noeng+')':'';
     document.getElementById('cWarn').textContent = ct.warn?'('+ct.warn+'!)':'';
     var cp = document.getElementById('cCboP'); if (cp) cp.textContent = ct.cbopaused?'('+ct.cbopaused+')':'';
+    var cl = document.getElementById('cLivre'); if (cl) cl.textContent = ct.livre?'('+ct.livre+')':'';
   }
 
   function renderTable() {
     var srch = document.getElementById('srch');
     var q = srch ? srch.value.toLowerCase() : '';
     var rows = allData.filter(function(a) {
-      var mf = curF==='all' || (curF==='warn' && a.account_status===3) || (curF==='cbopaused' && a._cboState==='paused') || a._cat===curF;
+      var mf = curF==='all' || (curF==='warn' && a.account_status===3) || (curF==='cbopaused' && a._cboState==='paused') || (curF==='livre' && a._livre) || a._cat===curF;
       var mAcct = curAcctF==='all' || (curAcctF==='active' && a.account_status===1) || (curAcctF==='disabled' && a.account_status!==1);
       var mq = !q || a.name.toLowerCase().indexOf(q) >= 0;
       return mf && mAcct && mq;
@@ -932,7 +948,7 @@ html,body{background:#fbfcfd!important}
       return '<tr style="'+rowBg+'">'+
         '<td style="font-weight:500;color:#0d1117;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="'+name+'">'+name+'</td>'+
         '<td>'+statusBadge(acc.account_status)+'</td>'+
-        '<td>'+campBadge(acc._cat)+(acc._cboState==='paused'?'<div style="font-size:10px;color:#9a6700;margin-top:3px;font-weight:600" title="A conta tem CBO mas todas estao pausadas — livre p/ subir novas">&#9888; CBO parada (livre p/ subir)</div>':(acc._cboState==='active'?'<div style="font-size:10px;color:#1a7f37;margin-top:3px">CBO ativa</div>':''))+'</td>'+
+        '<td>'+campBadge(acc._cat)+(acc._cboState==='paused'?'<div style="font-size:10px;color:#9a6700;margin-top:3px;font-weight:600" title="A conta tem CBO mas todas estao pausadas — livre p/ subir novas">&#9888; CBO parada (livre p/ subir)</div>':(acc._cboState==='active'?'<div style="font-size:10px;color:#1a7f37;margin-top:3px">CBO ativa</div>':''))+(acc._livre?'<div style="font-size:10px;color:#1a7f37;margin-top:3px;font-weight:600" title="Sem nenhuma campanha de vendas ativa (CBO/ABO/venda) — livre p/ subir nova">&#128994; SEM CBO - Livre</div>':'')+'</td>'+
         '<td style="font-size:12px">'+(acc._card?('<span style="color:#57606a">'+acc._card.replace(/</g,'&lt;')+'</span>'):'<span class="badge b-r">sem cartao</span>')+'</td>'+
         '<td style="font-size:12px;color:#0969da">'+dl+'</td>'+
         '<td style="font-size:12px">'+(acc._sToday>0?fmtUSD(acc._sToday):'---')+'</td>'+
@@ -1302,7 +1318,7 @@ html,body{background:#fbfcfd!important}
           /* Contas/BMs a ignorar (ex: Effective 01 e Origin). */
           var an = (acc.name || '').toLowerCase();
           if (an.indexOf('effective 01') >= 0 || an.indexOf('origin') >= 0 || an.indexOf('hhh hhh') >= 0) return null;
-          return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,lifetime_budget,daily_budget,stop_time,objective&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
+          return fjPaged(API+'/'+acc.id+'/campaigns?fields=name,status,effective_status,issues_info,lifetime_budget,daily_budget,stop_time,objective,bid_strategy&effective_status=["ACTIVE","PAUSED","IN_PROCESS","WITH_ISSUES"]&limit=100&access_token='+acc._tk).then(function(list) {
             list.filter(function(c) {
               var es = (c.effective_status || c.status || '').toUpperCase();
               if (es === 'DELETED' || es === 'ARCHIVED') return false; /* nao mostrar excluidas/arquivadas */
@@ -2789,9 +2805,10 @@ html,body{background:#fbfcfd!important}
     m.classList.add('show');
   }
 
-  /* Aplica o LIMITE DE LANCE (bid_amount, CENTAVOS USD) em TODOS os conjuntos ATIVOS da campanha (estrategia BID).
-     Busca os conjuntos PAGINADO na hora (nao usa camp._adsets, que vem limitado na carga) -> pega os 140+.
-     Posta 1 a 1 (com contador de progresso) e depois RE-LE tudo p/ contar quantos ficaram no novo cap. */
+  /* Aplica o valor de lance (bid_amount, CENTAVOS USD) em TODOS os conjuntos ATIVOS da campanha, via BATCH API
+     (ate 50 operacoes por chamada HTTP -> 140 conjuntos = 3 chamadas, rapido e sem estourar rate limit).
+     bid_amount serve as DUAS estrategias: LOWEST_COST_WITH_BID_CAP (Limite de lance) e COST_CAP (Meta de custo
+     por resultado). NAO troca a estrategia — so ajusta o valor da que ja esta ativa. */
   function applyBidCap(i) {
     var camp = cboData[i];
     if (!camp) return;
@@ -2799,8 +2816,10 @@ html,body{background:#fbfcfd!important}
     var inp = document.getElementById('cbid_' + i) || document.getElementById('detBidInp');
     if (!inp) return;
     var val = parseFloat(inp.value);
-    if (!(val > 0)) { alert('Digite um limite de lance válido (US$).'); return; }
+    if (!(val > 0)) { alert('Digite um valor válido (US$).'); return; }
     var cents = Math.round(val * 100);
+    var strat = (camp.bid_strategy || '').toUpperCase();
+    var lbl = strat === 'COST_CAP' ? 'Meta de custo por resultado' : (strat === 'LOWEST_COST_WITH_BID_CAP' ? 'Limite de lance' : 'lance/custo');
     var btn = document.getElementById('cbidbtn_' + i) || document.getElementById('detBidSave');
     var btnLabel = btn ? btn.innerHTML : 'Aplicar';
     var restore = function(){ if (btn) { btn.disabled = false; btn.innerHTML = btnLabel; } };
@@ -2808,41 +2827,49 @@ html,body{background:#fbfcfd!important}
     var useTk = camp._tk;
     var DEADSET = ['DISAPPROVED','PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED'];
     var isActiveSet = function(s){ return DEADSET.indexOf((s.effective_status || '').toUpperCase()) < 0; };
-    var adsetsUrl = function(){ return API + '/' + camp.id + '/adsets?fields=id,name,effective_status,bid_amount&limit=200&access_token=' + useTk; };
     /* 1) busca TODOS os conjuntos (paginado) e filtra os ATIVOS. */
-    fjPaged(adsetsUrl()).then(function(list){
+    fjPaged(API + '/' + camp.id + '/adsets?fields=id,name,effective_status&limit=200&access_token=' + useTk).then(function(list){
       var actSets = (list || []).filter(isActiveSet);
-      if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo p/ setar o limite de lance. Recarregue as campanhas.'); restore(); return; }
-      if (!confirm('Setar Limite de lance $' + val + ' em TODOS os ' + actSets.length + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) { restore(); return; }
-      /* 2) posta bid_amount em cada um, sequencial, com contador de progresso no botao. */
-      var done = 0, postErrs = [];
+      if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo. Recarregue as campanhas.'); restore(); return; }
+      if (!confirm('Setar ' + lbl + ' $' + val + ' em TODOS os ' + actSets.length + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) { restore(); return; }
+      /* 2) aplica bid_amount via BATCH API — lotes de 50 (1 chamada HTTP por lote). */
+      var chunks = [];
+      for (var k = 0; k < actSets.length; k += 50) chunks.push(actSets.slice(k, k + 50));
+      var okN = 0, errs = [];
       var seq = Promise.resolve();
-      actSets.forEach(function(s){
+      chunks.forEach(function(chunk, ci){
         seq = seq.then(function(){
-          return withTokenFallback(useTk, function(tk){ return postForm(s.id, tk, { bid_amount: cents }); })
-            .then(function(r){ useTk = r.tk; camp._tk = r.tk; })
-            .catch(function(e){ postErrs.push((s.name || s.id) + ': ' + (e && e.message ? e.message : e)); })
-            .then(function(){ done++; if (btn) btn.textContent = done + '/' + actSets.length; });
+          return withTokenFallback(useTk, function(tk){
+            var body = new URLSearchParams();
+            body.append('batch', JSON.stringify(chunk.map(function(s){ return { method: 'POST', relative_url: s.id, body: 'bid_amount=' + cents }; })));
+            body.append('access_token', tk);
+            return fetch(API + '/', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
+              .then(function(r){ return r.json(); })
+              .then(function(j){ if (j && j.error) throw new Error(j.error.message || 'batch error'); return j; });
+          })
+          .then(function(r){ useTk = r.tk; camp._tk = r.tk;
+            var arr = r.result;
+            if (Array.isArray(arr)) arr.forEach(function(resp, ix){
+              if (resp && resp.code === 200) okN++;
+              else { var em = ''; try { em = JSON.parse(resp.body).error.message; } catch (e) {} errs.push((chunk[ix].name || chunk[ix].id) + ': ' + (em || ('HTTP ' + (resp ? resp.code : '?')))); }
+            });
+            else errs.push('lote ' + (ci + 1) + ': resposta inesperada');
+            if (btn) btn.textContent = okN + '/' + actSets.length;
+          })
+          .catch(function(e){ for (var z = 0; z < chunk.length; z++) errs.push((chunk[z].name || chunk[z].id) + ': ' + (e && e.message ? e.message : e)); });
         });
       });
       return seq.then(function(){
-        /* 3) RE-LE tudo (paginado) e conta quantos ATIVOS ficaram no novo cap. */
-        return fjPaged(adsetsUrl()).then(function(after){
-          var act2 = (after || []).filter(isActiveSet), okN = 0;
-          act2.forEach(function(s){ if (s.bid_amount != null && Math.abs(parseInt(s.bid_amount) - cents) <= 1) okN++; });
-          var total = act2.length || actSets.length;
-          var accepted = postErrs.length === 0; /* nenhum POST falhou -> escrita aceita (read-back pode atrasar) */
-          if (accepted) {
-            notifyOk('Limite de lance $' + val + ' em "' + camp.name + '"', okN + '/' + total + ' conjunto(s)' + (okN < total ? ' · a Meta pode levar ~1 min pra refletir' : ''));
-            try { logRuleHist(camp, 'BID', 'Limite de lance → $' + val + ' (' + total + ' conjunto(s))', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch (e) {}
-            closeCboDetail();
-            renderCBO();
-          } else {
-            var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(postErrs.join(' '));
-            notifyErr('Limite de lance: ' + okN + '/' + total + ' em "' + camp.name + '"', (postErrs[0] || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
-            restore();
-          }
-        });
+        if (okN === actSets.length) {
+          notifyOk(lbl + ' $' + val + ' em "' + camp.name + '"', okN + '/' + actSets.length + ' conjunto(s) · via Batch (' + chunks.length + ' chamada(s))');
+          try { logRuleHist(camp, 'BID', lbl + ' → $' + val + ' (' + okN + ' conjunto(s))', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch (e) {}
+          closeCboDetail();
+          renderCBO();
+        } else {
+          var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(errs.join(' '));
+          notifyErr(lbl + ': ' + okN + '/' + actSets.length + ' em "' + camp.name + '"', (errs[0] || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
+          restore();
+        }
       });
     }).catch(function(e){
       notifyErr('Erro ao buscar conjuntos de "' + camp.name + '"', (e && e.message ? e.message : String(e)));
@@ -3098,20 +3125,31 @@ html,body{background:#fbfcfd!important}
     return round(0);
   }
 
-  /* Celula da coluna "Limite lance": mostra o bid cap atual dos conjuntos ATIVOS + input + botao (aplica em todos). */
+  /* Celula "Limite lance": ciente da ESTRATEGIA de lance da campanha (bid_strategy).
+     LOWEST_COST_WITH_BID_CAP = Limite de lance; COST_CAP = Meta de custo por resultado -> AMBOS usam bid_amount.
+     LOWEST_COST_WITH_MIN_ROAS / LOWEST_COST_WITHOUT_CAP nao usam bid_amount -> so mostra o nome (nao edita). */
   function bidCellHtml(camp, i) {
+    var strat = (camp.bid_strategy || '').toUpperCase();
+    var CAP = { 'LOWEST_COST_WITH_BID_CAP': 'Limite de lance', 'COST_CAP': 'Custo/resultado' };
+    var usaBid = !strat || !!CAP[strat]; /* estrategia desconhecida (vazia) tbm mostra o input (fallback) */
+    if (!usaBid) {
+      var nm = strat === 'LOWEST_COST_WITH_MIN_ROAS' ? 'Meta de ROAS' : 'Maior volume';
+      return '<span style="font-size:10px;color:#656d76" title="Estratégia sem limite de lance/custo — edite no gerenciador">' + nm + '</span>';
+    }
     var actSets = (camp._adsets || []).filter(function(s){ return (s.effective_status || '').toUpperCase() === 'ACTIVE'; });
     if (!actSets.length) return '<span style="font-size:11px;color:#656d76">—</span>';
     var bidsC = actSets.map(function(s){ return (s.bid_amount != null && +s.bid_amount > 0) ? +s.bid_amount : null; }).filter(function(v){ return v != null; });
     var uniqB = bidsC.filter(function(v, ix, a){ return a.indexOf(v) === ix; });
-    var cur = bidsC.length ? (uniqB.length === 1 ? fmtUSD(uniqB[0]/100) : (fmtUSD(Math.min.apply(null,bidsC)/100) + '–' + fmtUSD(Math.max.apply(null,bidsC)/100))) : 'sem limite';
+    var cur = bidsC.length ? (uniqB.length === 1 ? fmtUSD(uniqB[0]/100) : (fmtUSD(Math.min.apply(null,bidsC)/100) + '–' + fmtUSD(Math.max.apply(null,bidsC)/100))) : 'sem valor';
     var pre = bidsC.length ? Math.round(Math.max.apply(null,bidsC)/100) : '';
-    return '<div style="display:flex;flex-direction:column;gap:3px;min-width:98px">'
-      + '<span style="font-size:10px;color:#656d76" title="cap atual dos conjuntos ativos">' + cur + '</span>'
+    var lbl = CAP[strat] || '';
+    return '<div style="display:flex;flex-direction:column;gap:2px;min-width:98px">'
+      + (lbl ? '<span style="font-size:9px;color:#0969da;text-transform:uppercase;letter-spacing:.03em" title="estratégia de lance da campanha">' + lbl + '</span>' : '')
+      + '<span style="font-size:10px;color:#656d76" title="valor atual dos conjuntos ativos">' + cur + '</span>'
       + '<div style="display:flex;align-items:center;gap:3px">'
       + '<span style="font-size:11px;color:#656d76">$</span>'
-      + '<input class="cbo-inp" id="cbid_' + i + '" type="number" min="1" step="any" value="' + pre + '" placeholder="ex: 270" style="width:58px" title="Novo limite de lance (US$) — aplica em ' + actSets.length + ' conjunto(s) ativo(s)">'
-      + '<button class="save-btn" id="cbidbtn_' + i + '" style="padding:4px 8px" title="Aplicar limite de lance nos ' + actSets.length + ' conjunto(s) ativo(s)">&#10003;</button>'
+      + '<input class="cbo-inp" id="cbid_' + i + '" type="number" min="1" step="any" value="' + pre + '" placeholder="ex: 160" style="width:58px" title="Novo valor (US$) — aplica em TODOS os conjuntos ativos (via Batch)">'
+      + '<button class="save-btn" id="cbidbtn_' + i + '" style="padding:4px 8px" title="Aplicar em todos os conjuntos ativos (Batch API)">&#10003;</button>'
       + '</div></div>';
   }
 
