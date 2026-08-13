@@ -226,6 +226,7 @@ html,body{background:#fbfcfd!important}
             <th rowspan="2">Saldo</th>
             <th colspan="3" class="th-group" style="text-align:center;border-left:1px solid #d0d7de">&#128247; Facebook</th>
             <th colspan="10" class="th-group" style="text-align:center;border-left:1px solid #d0d7de">&#128200; RedTrack / Resultados</th>
+            <th rowspan="2" title="Limite de lance (bid cap) dos conjuntos ativos — estrategia BID" style="border-left:1px solid #d0d7de">Limite lance</th>
             <th rowspan="2" title="Saldo / Dias ate termino">Di&#225;rio Meta</th>
             <th rowspan="2">Di&#225;rio Desejado</th>
             <th rowspan="2">Sugest&#227;o Or&#231;.</th>
@@ -233,7 +234,6 @@ html,body{background:#fbfcfd!important}
             <th rowspan="2">Termino Calc.</th>
             <th rowspan="2">Data Termino</th>
             <th rowspan="2">Aplicar</th>
-            <th rowspan="2" title="Limite de lance (bid cap) dos conjuntos ativos — estrategia BID">Limite lance</th>
           </tr>
           <tr>
             <th style="border-left:1px solid #d0d7de">Gasto</th>
@@ -1385,7 +1385,7 @@ html,body{background:#fbfcfd!important}
         var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
         /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
            p/ a regra de LIMITAR GASTO (soft-stop) e p/ detectar campanha ja limitada. */
-        var adsetsUrl = API+'/'+c.id+'/adsets?fields=id,name,effective_status,bid_amount,lifetime_spend_cap,insights.date_preset(maximum){spend}&limit=50&access_token='+c._tk;
+        var adsetsUrl = API+'/'+c.id+'/adsets?fields=id,name,effective_status,bid_amount,lifetime_spend_cap,insights.date_preset(maximum){spend}&limit=200&access_token='+c._tk;
         var calls = isLifetime
           ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
           : [fj(totalUrl),
@@ -2499,6 +2499,7 @@ html,body{background:#fbfcfd!important}
         '<td style="font-size:12px;color:#1a7f37">'+fatTxt+'</td>' +
         '<td style="font-size:12px">'+lucroTxt+'</td>' +
         '<td style="font-size:12px">'+roasTxt+'</td>' +
+        '<td style="border-left:1px solid #e4e8ee">'+bidCellHtml(camp, i)+'</td>' +
         '<td style="font-size:12px;color:#9a6700;font-weight:600">'+diarioMeta+'</td>' +
         /* Orcamento DIARIO: sem campo de diario desejado, sem botao de limitar/termino/aplicar (so visualizacao). */
         '<td>'+(isDaily ? '' : '<input class="cbo-inp" id="cdaily_'+i+'" type="number" min="1" step="any" placeholder="ex: 100">')+'</td>' +
@@ -2507,7 +2508,6 @@ html,body{background:#fbfcfd!important}
         '<td id="cend_'+i+'" style="font-size:12px;color:#1f2328">'+(isDaily ? '---' : initEnd)+'</td>' +
         '<td>'+(isDaily ? '' : '<input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'">')+'</td>' +
         '<td>'+(isDaily ? '' : '<button class="save-btn" id="csavebtn_'+i+'">Aplicar</button>')+'</td>' +
-        '<td>'+bidCellHtml(camp, i)+'</td>' +
         '</tr>';
     }).join('');
     /* Linha de TOTAIS — soma SO as campanhas do filtro atual (applyCboFilters recalcula). */
@@ -2789,8 +2789,9 @@ html,body{background:#fbfcfd!important}
     m.classList.add('show');
   }
 
-  /* Aplica o LIMITE DE LANCE (bid_amount, em CENTAVOS USD) nos conjuntos ATIVOS da campanha (estrategia BID).
-     Posta 1 a 1, confere lendo de volta o bid_amount, e reporta. Requer a campanha em estrategia de LIMITE DE LANCE. */
+  /* Aplica o LIMITE DE LANCE (bid_amount, CENTAVOS USD) em TODOS os conjuntos ATIVOS da campanha (estrategia BID).
+     Busca os conjuntos PAGINADO na hora (nao usa camp._adsets, que vem limitado na carga) -> pega os 140+.
+     Posta 1 a 1 (com contador de progresso) e depois RE-LE tudo p/ contar quantos ficaram no novo cap. */
   function applyBidCap(i) {
     var camp = cboData[i];
     if (!camp) return;
@@ -2800,37 +2801,52 @@ html,body{background:#fbfcfd!important}
     var val = parseFloat(inp.value);
     if (!(val > 0)) { alert('Digite um limite de lance válido (US$).'); return; }
     var cents = Math.round(val * 100);
-    var actSets = (camp._adsets || []).filter(function(s){ return (s.effective_status || '').toUpperCase() === 'ACTIVE'; });
-    if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo p/ setar o limite de lance. Recarregue as campanhas.'); return; }
-    if (!confirm('Setar Limite de lance $' + val + ' em ' + actSets.length + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) return;
     var btn = document.getElementById('cbidbtn_' + i) || document.getElementById('detBidSave');
     var btnLabel = btn ? btn.innerHTML : 'Aplicar';
+    var restore = function(){ if (btn) { btn.disabled = false; btn.innerHTML = btnLabel; } };
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
-    var useTk = camp._tk, okN = 0, fails = [];
-    var seq = Promise.resolve();
-    actSets.forEach(function(s){
-      seq = seq.then(function(){
-        return withTokenFallback(useTk, function(tk){ return postForm(s.id, tk, { bid_amount: cents }); })
-          .then(function(r){ useTk = r.tk; camp._tk = r.tk;
-            return fj(API + '/' + s.id + '?fields=bid_amount&access_token=' + useTk).then(function(chk){
-              if (chk && chk.bid_amount != null && Math.abs(parseInt(chk.bid_amount) - cents) <= 1) { s.bid_amount = String(cents); okN++; }
-              else fails.push((s.name || s.id) + ': Meta manteve ' + (chk && chk.bid_amount != null ? ('$' + Math.round(parseInt(chk.bid_amount) / 100)) : '?'));
-            });
-          })
-          .catch(function(e){ fails.push((s.name || s.id) + ': ' + (e && e.message ? e.message : e)); });
+    var useTk = camp._tk;
+    var DEADSET = ['DISAPPROVED','PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED'];
+    var isActiveSet = function(s){ return DEADSET.indexOf((s.effective_status || '').toUpperCase()) < 0; };
+    var adsetsUrl = function(){ return API + '/' + camp.id + '/adsets?fields=id,name,effective_status,bid_amount&limit=200&access_token=' + useTk; };
+    /* 1) busca TODOS os conjuntos (paginado) e filtra os ATIVOS. */
+    fjPaged(adsetsUrl()).then(function(list){
+      var actSets = (list || []).filter(isActiveSet);
+      if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo p/ setar o limite de lance. Recarregue as campanhas.'); restore(); return; }
+      if (!confirm('Setar Limite de lance $' + val + ' em TODOS os ' + actSets.length + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) { restore(); return; }
+      /* 2) posta bid_amount em cada um, sequencial, com contador de progresso no botao. */
+      var done = 0, postErrs = [];
+      var seq = Promise.resolve();
+      actSets.forEach(function(s){
+        seq = seq.then(function(){
+          return withTokenFallback(useTk, function(tk){ return postForm(s.id, tk, { bid_amount: cents }); })
+            .then(function(r){ useTk = r.tk; camp._tk = r.tk; })
+            .catch(function(e){ postErrs.push((s.name || s.id) + ': ' + (e && e.message ? e.message : e)); })
+            .then(function(){ done++; if (btn) btn.textContent = done + '/' + actSets.length; });
+        });
       });
-    });
-    seq.then(function(){
-      if (okN === actSets.length) {
-        notifyOk('Limite de lance alterado em "' + camp.name + '"', '$' + val + ' em ' + okN + '/' + actSets.length + ' conjunto(s)');
-        try { logRuleHist(camp, 'BID', 'Limite de lance → $' + val + ' (' + okN + ' conjunto(s))', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch (e) {}
-        closeCboDetail();
-        renderCBO();
-      } else {
-        var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(fails.join(' '));
-        notifyErr('Limite de lance: só ' + okN + '/' + actSets.length + ' em "' + camp.name + '"', (fails[0] || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
-        if (btn) { btn.disabled = false; btn.innerHTML = btnLabel; }
-      }
+      return seq.then(function(){
+        /* 3) RE-LE tudo (paginado) e conta quantos ATIVOS ficaram no novo cap. */
+        return fjPaged(adsetsUrl()).then(function(after){
+          var act2 = (after || []).filter(isActiveSet), okN = 0;
+          act2.forEach(function(s){ if (s.bid_amount != null && Math.abs(parseInt(s.bid_amount) - cents) <= 1) okN++; });
+          var total = act2.length || actSets.length;
+          var accepted = postErrs.length === 0; /* nenhum POST falhou -> escrita aceita (read-back pode atrasar) */
+          if (accepted) {
+            notifyOk('Limite de lance $' + val + ' em "' + camp.name + '"', okN + '/' + total + ' conjunto(s)' + (okN < total ? ' · a Meta pode levar ~1 min pra refletir' : ''));
+            try { logRuleHist(camp, 'BID', 'Limite de lance → $' + val + ' (' + total + ' conjunto(s))', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch (e) {}
+            closeCboDetail();
+            renderCBO();
+          } else {
+            var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(postErrs.join(' '));
+            notifyErr('Limite de lance: ' + okN + '/' + total + ' em "' + camp.name + '"', (postErrs[0] || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
+            restore();
+          }
+        });
+      });
+    }).catch(function(e){
+      notifyErr('Erro ao buscar conjuntos de "' + camp.name + '"', (e && e.message ? e.message : String(e)));
+      restore();
     });
   }
 
