@@ -233,6 +233,7 @@ html,body{background:#fbfcfd!important}
             <th rowspan="2">Termino Calc.</th>
             <th rowspan="2">Data Termino</th>
             <th rowspan="2">Aplicar</th>
+            <th rowspan="2" title="Limite de lance (bid cap) dos conjuntos ativos — estrategia BID">Limite lance</th>
           </tr>
           <tr>
             <th style="border-left:1px solid #d0d7de">Gasto</th>
@@ -250,7 +251,7 @@ html,body{background:#fbfcfd!important}
             <th style="cursor:pointer;user-select:none" data-sort="roas" id="thRoas">ROAS &#8645;</th>
           </tr>
         </thead>
-        <tbody id="cboTbody"><tr><td colspan="26" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
+        <tbody id="cboTbody"><tr><td colspan="27" class="ld">Clique em "Carregar campanhas CBO" para iniciar.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2506,6 +2507,7 @@ html,body{background:#fbfcfd!important}
         '<td id="cend_'+i+'" style="font-size:12px;color:#1f2328">'+(isDaily ? '---' : initEnd)+'</td>' +
         '<td>'+(isDaily ? '' : '<input class="cbo-date" type="date" id="cnewdate_'+i+'" value="'+curEnd+'">')+'</td>' +
         '<td>'+(isDaily ? '' : '<button class="save-btn" id="csavebtn_'+i+'">Aplicar</button>')+'</td>' +
+        '<td>'+bidCellHtml(camp, i)+'</td>' +
         '</tr>';
     }).join('');
     /* Linha de TOTAIS — soma SO as campanhas do filtro atual (applyCboFilters recalcula). */
@@ -2523,6 +2525,10 @@ html,body{background:#fbfcfd!important}
       if (sbtn) sbtn.addEventListener('click', function() { applyRuleSuggestion(i); });
       var tbtn = document.getElementById('ctgl_'+i);
       if (tbtn) tbtn.addEventListener('click', function() { toggleCampaign(i); });
+      var bidBtn = document.getElementById('cbidbtn_'+i);
+      if (bidBtn) bidBtn.addEventListener('click', function() { applyBidCap(i); });
+      var bidRowInp = document.getElementById('cbid_'+i);
+      if (bidRowInp) bidRowInp.addEventListener('keydown', function(e){ if (e.key === 'Enter') applyBidCap(i); });
       /* Item 4 (mobile): toque na 1a coluna (campanha) abre o card de detalhes.
          So vincula em touch p/ nao mudar nada no desktop. */
       if (isTouchDevice()) {
@@ -2581,7 +2587,7 @@ html,body{background:#fbfcfd!important}
       '<td style="color:#1a7f37">'+(hasC&&T.fat>0?fmtUSD(T.fat):'---')+'</td>' +
       '<td>'+(hasC?'<span class="'+(T.lucro>=0?'d-good':'d-bad')+'">'+fmtUSD(T.lucro)+'</span>':'---')+'</td>' +
       '<td>'+(hasC&&tRoas>0?'<span class="'+(tRoas>=1.4?'d-good':(tRoas>=1.2?'d-warn':'d-bad'))+'">'+tRoas.toFixed(2).replace('.',',')+'</span>':'---')+'</td>' +
-      '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
+      '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
       '</tr>';
   }
 
@@ -2788,7 +2794,8 @@ html,body{background:#fbfcfd!important}
   function applyBidCap(i) {
     var camp = cboData[i];
     if (!camp) return;
-    var inp = document.getElementById('detBidInp');
+    /* le do campo da LINHA (cbid_i) ou do painel de DETALHE (detBidInp) — a funcao serve os dois. */
+    var inp = document.getElementById('cbid_' + i) || document.getElementById('detBidInp');
     if (!inp) return;
     var val = parseFloat(inp.value);
     if (!(val > 0)) { alert('Digite um limite de lance válido (US$).'); return; }
@@ -2796,7 +2803,8 @@ html,body{background:#fbfcfd!important}
     var actSets = (camp._adsets || []).filter(function(s){ return (s.effective_status || '').toUpperCase() === 'ACTIVE'; });
     if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo p/ setar o limite de lance. Recarregue as campanhas.'); return; }
     if (!confirm('Setar Limite de lance $' + val + ' em ' + actSets.length + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) return;
-    var btn = document.getElementById('detBidSave');
+    var btn = document.getElementById('cbidbtn_' + i) || document.getElementById('detBidSave');
+    var btnLabel = btn ? btn.innerHTML : 'Aplicar';
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
     var useTk = camp._tk, okN = 0, fails = [];
     var seq = Promise.resolve();
@@ -2821,7 +2829,7 @@ html,body{background:#fbfcfd!important}
       } else {
         var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(fails.join(' '));
         notifyErr('Limite de lance: só ' + okN + '/' + actSets.length + ' em "' + camp.name + '"', (fails[0] || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
-        if (btn) { btn.disabled = false; btn.textContent = 'Aplicar'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = btnLabel; }
       }
     });
   }
@@ -3072,6 +3080,23 @@ html,body{background:#fbfcfd!important}
       });
     }
     return round(0);
+  }
+
+  /* Celula da coluna "Limite lance": mostra o bid cap atual dos conjuntos ATIVOS + input + botao (aplica em todos). */
+  function bidCellHtml(camp, i) {
+    var actSets = (camp._adsets || []).filter(function(s){ return (s.effective_status || '').toUpperCase() === 'ACTIVE'; });
+    if (!actSets.length) return '<span style="font-size:11px;color:#656d76">—</span>';
+    var bidsC = actSets.map(function(s){ return (s.bid_amount != null && +s.bid_amount > 0) ? +s.bid_amount : null; }).filter(function(v){ return v != null; });
+    var uniqB = bidsC.filter(function(v, ix, a){ return a.indexOf(v) === ix; });
+    var cur = bidsC.length ? (uniqB.length === 1 ? fmtUSD(uniqB[0]/100) : (fmtUSD(Math.min.apply(null,bidsC)/100) + '–' + fmtUSD(Math.max.apply(null,bidsC)/100))) : 'sem limite';
+    var pre = bidsC.length ? Math.round(Math.max.apply(null,bidsC)/100) : '';
+    return '<div style="display:flex;flex-direction:column;gap:3px;min-width:98px">'
+      + '<span style="font-size:10px;color:#656d76" title="cap atual dos conjuntos ativos">' + cur + '</span>'
+      + '<div style="display:flex;align-items:center;gap:3px">'
+      + '<span style="font-size:11px;color:#656d76">$</span>'
+      + '<input class="cbo-inp" id="cbid_' + i + '" type="number" min="1" step="any" value="' + pre + '" placeholder="ex: 270" style="width:58px" title="Novo limite de lance (US$) — aplica em ' + actSets.length + ' conjunto(s) ativo(s)">'
+      + '<button class="save-btn" id="cbidbtn_' + i + '" style="padding:4px 8px" title="Aplicar limite de lance nos ' + actSets.length + ' conjunto(s) ativo(s)">&#10003;</button>'
+      + '</div></div>';
   }
 
   /* ===== EDITAR ORCAMENTO da campanha (diario OU total) direto no Meta ===== */
