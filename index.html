@@ -545,6 +545,18 @@ html,body{background:#fbfcfd!important}
       return d;
     }).catch(function(){ return { error: { message: 'falha de rede' } }; });
   }
+  /* Igual fjPaged, mas cada pagina passa por fjRetry (repete em rate limit). Devolve TODOS os itens. */
+  function fjPagedR(url) {
+    var all = [];
+    function go(u) {
+      return fjRetry(u).then(function(d) {
+        if (d && d.data && d.data.length) all = all.concat(d.data);
+        if (d && d.paging && d.paging.next) return go(d.paging.next);
+        return all;
+      });
+    }
+    return go(url);
+  }
   /* Segue paginacao do Graph API (data.paging.next) e devolve TODOS os itens. */
   function fjPaged(url) {
     var all = [];
@@ -1402,9 +1414,81 @@ html,body{background:#fbfcfd!important}
     var singleDay = (_pd && _pd.since === _pd.until) ? _pd.since : null;
     var hourlyWide = singleDay ? encodeURIComponent(JSON.stringify({ since: shiftDay(singleDay, -1), until: shiftDay(singleDay, 1) })) : null;
     document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Carregando metricas de '+camps.length+' campanhas CBO ('+periodLabel()+')...</td></tr>';
+    /* ===== OTIMIZACAO RATE LIMIT (level=campaign por CONTA) =====
+       Em vez de 4 chamadas POR CAMPANHA, puxa por CONTA: gasto do periodo + gasto vitalicio + conjuntos +
+       anuncios TODOS no nivel da conta (level=campaign / campaign_id), 1 chamada de cada por conta (paginada).
+       Uma conta com 10 campanhas passa de ~40 chamadas p/ ~4. Corta o grosso do rate limit. */
+    var accList = [];
+    (function(){ var g = {}; camps.forEach(function(c){ var a = g[c._acctId] || (g[c._acctId] = { acctId: c._acctId, tk: c._tk, offset: c._acctOffset, camps: [] }); a.camps.push(c); }); accList = Object.keys(g).map(function(k){ return g[k]; }); })();
+    function fetchAccount(gr) {
+      var acct = gr.acctId, tk = gr.tk;
+      var offBr = gr.offset != null && Number(gr.offset) !== -3;
+      var useHourly = !!(singleDay && offBr);
+      var lifeUrl = API+'/'+acct+'/insights?level=campaign&fields=campaign_id,spend'+(isLifetime?',clicks,inline_link_clicks,cost_per_inline_link_click,inline_link_click_ctr':'')+'&time_range='+totalRange+'&limit=500&access_token='+tk;
+      var periodUrl = useHourly
+        ? (API+'/'+acct+'/insights?level=campaign&fields=campaign_id,spend,clicks,inline_link_clicks,impressions&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range='+hourlyWide+'&limit=500&access_token='+tk)
+        : (API+'/'+acct+'/insights?level=campaign&fields=campaign_id,spend,clicks,inline_link_clicks,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&limit=500&access_token='+tk);
+      var adsetsUrl = API+'/'+acct+'/adsets?fields=id,name,campaign_id,effective_status,bid_amount,lifetime_spend_cap,insights.date_preset(maximum){spend}&limit=300&access_token='+tk;
+      var adsUrl = API+'/'+acct+'/ads?fields=campaign_id,effective_status&limit=500&access_token='+tk;
+      var calls = isLifetime
+        ? [fjPagedR(lifeUrl), fjPagedR(adsetsUrl), fjPagedR(adsUrl)]
+        : [fjPagedR(lifeUrl), fjPagedR(periodUrl), fjPagedR(adsetsUrl), fjPagedR(adsUrl)];
+      return Promise.all(calls).then(function(res) {
+        var lifeRows, periodRows, adsetRows, adRows;
+        if (isLifetime) { lifeRows = res[0]; periodRows = res[0]; adsetRows = res[1]; adRows = res[2]; }
+        else { lifeRows = res[0]; periodRows = res[1]; adsetRows = res[2]; adRows = res[3]; }
+        var lifeMap = {}; (lifeRows||[]).forEach(function(r){ if (r.campaign_id) lifeMap[r.campaign_id] = r; });
+        var periodMap = {};
+        if (useHourly) {
+          var byCid = {}; (periodRows||[]).forEach(function(r){ if (!r.campaign_id) return; (byCid[r.campaign_id] = byCid[r.campaign_id] || []).push(r); });
+          Object.keys(byCid).forEach(function(cid){ periodMap[cid] = sumBrDayHourly(byCid[cid], singleDay, Number(gr.offset)); });
+        } else { (periodRows||[]).forEach(function(r){ if (r.campaign_id) periodMap[r.campaign_id] = r; }); }
+        var adsetsByCid = {}; (adsetRows||[]).forEach(function(s){ if (!s.campaign_id) return; (adsetsByCid[s.campaign_id] = adsetsByCid[s.campaign_id] || []).push(s); });
+        var adsByCid = {}; (adRows||[]).forEach(function(a){ if (!a.campaign_id) return; (adsByCid[a.campaign_id] = adsByCid[a.campaign_id] || []).push(a); });
+        gr.camps.forEach(function(c) {
+          var lr = lifeMap[c.id];
+          c._spend = lr ? (parseFloat(lr.spend) || 0) : 0;
+          if (isLifetime) {
+            c._periodSpend = c._spend;
+            c._clicks = lr ? (parseInt(lr.clicks) || 0) : 0;
+            c._linkClicks = lr ? (parseInt(lr.inline_link_clicks) || 0) : 0;
+            c._cpc = lr ? (parseFloat(lr.cost_per_inline_link_click) || 0) : 0;
+            c._ctr = lr ? (parseFloat(lr.inline_link_click_ctr) || 0) : 0;
+          } else if (useHourly) {
+            var agg = periodMap[c.id] || { spend:0, clicks:0, linkClicks:0, impressions:0 };
+            c._periodSpend = agg.spend; c._clicks = agg.clicks; c._linkClicks = agg.linkClicks;
+            c._cpc = agg.linkClicks > 0 ? (agg.spend / agg.linkClicks) : 0;
+            c._ctr = agg.impressions > 0 ? (agg.linkClicks / agg.impressions * 100) : 0;
+          } else {
+            var p = periodMap[c.id];
+            c._periodSpend = p ? (parseFloat(p.spend) || 0) : 0;
+            c._clicks = p ? (parseInt(p.clicks) || 0) : 0;
+            c._linkClicks = p ? (parseInt(p.inline_link_clicks) || 0) : 0;
+            c._cpc = p ? (parseFloat(p.cost_per_inline_link_click) || 0) : 0;
+            c._ctr = p ? (parseFloat(p.inline_link_click_ctr) || 0) : 0;
+          }
+          var ads = adsByCid[c.id] || [];
+          var relevantes = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s!=='ARCHIVED' && s!=='DELETED'; });
+          c._adsErr = null;
+          c._adTotal = relevantes.length;
+          c._adActive = relevantes.filter(function(a){ return (a.effective_status||'').toUpperCase()==='ACTIVE'; }).length;
+          c._adRejected = relevantes.filter(function(a){ return (a.effective_status||'').toUpperCase()==='DISAPPROVED'; }).length;
+          c._adWithErr = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
+          c._adPaused = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='PAUSED'||s==='ADSET_PAUSED'||s==='CAMPAIGN_PAUSED'; }).length;
+          c._adsLoaded = true;
+          var adsets = adsetsByCid[c.id] || [];
+          var sumCaps = 0, anyCap = false;
+          adsets.forEach(function(s) { var life = 0; if (s.insights && s.insights.data && s.insights.data[0]) life = parseFloat(s.insights.data[0].spend) || 0; s._life = life; var cap = (s.lifetime_spend_cap != null) ? +s.lifetime_spend_cap : 0; if (cap > 0) { anyCap = true; sumCaps += cap / 100; } });
+          c._adsets = adsets;
+          c._hasCap = anyCap && sumCaps < Math.max((c._spend || 0) * 2, 20);
+        });
+      }).catch(function() {
+        gr.camps.forEach(function(c){ c._spend = c._spend||0; c._periodSpend = c._periodSpend||0; c._clicks = c._clicks||0; c._cpc = c._cpc||0; c._adTotal = 0; c._adActive = 0; c._adsLoaded = false; c._adsErr = 'falha ao carregar a conta'; c._adsets = c._adsets||[]; c._hasCap = false; });
+      });
+    }
     var idx = 0;
     function nextBatch() {
-      if (idx >= camps.length) {
+      if (idx >= accList.length) {
         return fetchConversions(camps).then(function() {
           /* Horarios exatos das vendas (so para o tooltip de hover). Defensivo: se falhar, segue sem tooltip. */
           return fetchSaleTimes(camps);
@@ -1433,86 +1517,8 @@ html,body{background:#fbfcfd!important}
           });
         });
       }
-      var batch = camps.slice(idx, idx+4); idx += 4; /* lote menor (4) reduz a rajada e evita o rate limit da Meta */
-      return Promise.all(batch.map(function(c) {
-        var offBr = c._acctOffset != null && Number(c._acctOffset) !== -3;
-        var useHourly = !!(singleDay && offBr); /* conta fora de UTC-3 + periodo de 1 dia -> soma por hora no dia BR */
-        var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&time_range='+totalRange+'&access_token='+c._tk;
-        /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
-        var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
-        /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
-           p/ a regra de LIMITAR GASTO (soft-stop) e p/ detectar campanha ja limitada. */
-        var adsetsUrl = API+'/'+c.id+'/adsets?fields=id,name,effective_status,bid_amount,lifetime_spend_cap,insights.date_preset(maximum){spend}&limit=200&access_token='+c._tk;
-        var periodUrl = useHourly
-          ? (API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,impressions&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range='+hourlyWide+'&access_token='+c._tk)
-          : (API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&access_token='+c._tk);
-        var calls = isLifetime
-          ? [fjRetry(totalUrl), fjRetry(adsUrl), fjRetry(adsetsUrl)]
-          : [fjRetry(totalUrl), fjRetry(periodUrl), fjRetry(adsUrl), fjRetry(adsetsUrl)];
-        return Promise.all(calls).then(function(res) {
-          var t = res[0].data && res[0].data[0];
-          c._spend = t ? parseFloat(t.spend) : 0;
-          var adsRes;
-          /* CPC de LINK (cost_per_inline_link_click) = "CPC correto" do media buyer = gasto / cliques no LINK,
-             NAO o cpc de todos os cliques (que conta curtida/comentario/expandir). Guarda tbm os cliques de link. */
-          if (isLifetime) {
-            c._periodSpend = c._spend;
-            c._clicks = t ? (parseInt(t.clicks) || 0) : 0;
-            c._linkClicks = t ? (parseInt(t.inline_link_clicks) || 0) : 0;
-            c._cpc = t ? (parseFloat(t.cost_per_inline_link_click) || 0) : 0;
-            c._ctr = t ? (parseFloat(t.inline_link_click_ctr) || 0) : 0; /* CTR de link (%), da Meta */
-            adsRes = res[1];
-          } else if (useHourly) {
-            /* Conta fora de UTC-3: soma so as horas do dia BR (fuso da conta -> UTC -> dia Brasil). */
-            var agg = sumBrDayHourly((res[1] && res[1].data) || [], singleDay, Number(c._acctOffset));
-            c._periodSpend = agg.spend;
-            c._clicks = agg.clicks;
-            c._linkClicks = agg.linkClicks;
-            c._cpc = agg.linkClicks > 0 ? (agg.spend / agg.linkClicks) : 0;
-            c._ctr = agg.impressions > 0 ? (agg.linkClicks / agg.impressions * 100) : 0;
-            adsRes = res[2];
-          } else {
-            var p = res[1].data && res[1].data[0];
-            c._periodSpend = p ? parseFloat(p.spend) : 0;
-            c._clicks = p ? (parseInt(p.clicks) || 0) : 0;
-            c._linkClicks = p ? (parseInt(p.inline_link_clicks) || 0) : 0;
-            c._cpc = p ? (parseFloat(p.cost_per_inline_link_click) || 0) : 0;
-            c._ctr = p ? (parseFloat(p.inline_link_click_ctr) || 0) : 0;
-            adsRes = res[2];
-          }
-          var ads = (adsRes && adsRes.data) ? adsRes.data : [];
-          /* A Meta as vezes corta a chamada ("User request limit reached"). fj() NAO lanca erro: devolve
-             {error}. Sem registrar isso, _adTotal virava 0 e o aviso de anuncio rejeitado sumia calado. */
-          c._adsErr = (adsRes && adsRes.error) ? String(adsRes.error.message || 'erro ao ler anuncios').slice(0, 120) : null;
-          /* Total relevante: exclui ARCHIVED/DELETED do denominador. */
-          var relevantes = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s!=='ARCHIVED' && s!=='DELETED'; });
-          c._adTotal = relevantes.length;
-          c._adActive = relevantes.filter(function(a){ return (a.effective_status||'').toUpperCase()==='ACTIVE'; }).length;
-          c._adRejected = relevantes.filter(function(a){ return (a.effective_status||'').toUpperCase()==='DISAPPROVED'; }).length;
-          c._adWithErr = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
-          c._adPaused = relevantes.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='PAUSED'||s==='ADSET_PAUSED'||s==='CAMPAIGN_PAUSED'; }).length;
-          c._adsLoaded = true;
-          /* Conjuntos: guarda id, status, limite atual e gasto vitalicio (p/ LIMITAR/REMOVER limite). */
-          var adsetsRes = res[res.length - 1];
-          var adsets = (adsetsRes && adsetsRes.data) ? adsetsRes.data : [];
-          /* LIMITADA? Teste pelo GASTO, nao pelo orcamento. Um teto so LIMITA se estiver perto do que a
-             campanha ja gastou (o robo trava em ~1,33x o gasto). Teto muito acima do gasto = nao trava nada
-             (ex.: teto $20k numa campanha que gastou $4k). O teste antigo (cap < orcamento) dava falso
-             positivo quando o orcamento subia depois de um "remover limite". */
-          var sumCaps = 0, anyCap = false;
-          adsets.forEach(function(s) {
-            var life = 0;
-            if (s.insights && s.insights.data && s.insights.data[0]) life = parseFloat(s.insights.data[0].spend) || 0;
-            s._life = life;
-            var cap = (s.lifetime_spend_cap != null) ? +s.lifetime_spend_cap : 0;
-            if (cap > 0) { anyCap = true; sumCaps += cap / 100; }
-          });
-          var campSpent = c._spend || 0; /* gasto vitalicio da campanha */
-          var hasCap = anyCap && sumCaps < Math.max(campSpent * 2, 20);
-          c._adsets = adsets;
-          c._hasCap = hasCap; /* ao menos 1 conjunto com "Maximo total" setado = campanha limitada (soft-stop) */
-        }).catch(function() { c._spend=0; c._periodSpend=0; c._clicks=0; c._cpc=0; c._adTotal=0; c._adActive=0; c._adRejected=0; c._adWithErr=0; c._adPaused=0; c._adsLoaded=false; c._adsErr='falha ao carregar os dados da campanha'; c._adsets=[]; c._hasCap=false; });
-      })).then(nextBatch);
+      var group = accList.slice(idx, idx+3); idx += 3; /* 3 CONTAS por vez (cada uma faz ~4 chamadas paginadas, level=campaign) */
+      return Promise.all(group.map(fetchAccount)).then(nextBatch);
     }
     return nextBatch();
   }
