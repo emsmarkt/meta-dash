@@ -635,6 +635,25 @@ html,body{background:#fbfcfd!important}
     if (cboPeriod === 'custom' && cboCustomFrom && cboCustomTo) { return {since:cboCustomFrom, until:cboCustomTo}; }
     return null;
   }
+  /* Desloca uma data YYYY-MM-DD em N dias. */
+  function shiftDay(dstr, n) { var d = new Date(dstr + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().split('T')[0]; }
+  /* Soma spend/clicks/impressoes das HORAS (breakdown hourly no fuso da CONTA) que caem no DIA do BRASIL
+     (00:00-23:59 BR = 03:00 UTC de hoje ate 03:00 UTC de amanha). local -> UTC: UTC = local - offset. */
+  function sumBrDayHourly(rows, brDate, offsetHours) {
+    var startUTC = Date.parse(brDate + 'T03:00:00Z'), endUTC = startUTC + 24 * 3600 * 1000;
+    var sp = 0, clk = 0, lclk = 0, imp = 0;
+    (rows || []).forEach(function(r) {
+      var ld = r.date_start; if (!ld) return;
+      var hb = r.hourly_stats_aggregated_by_advertiser_time_zone || '';
+      var hh = parseInt(hb.slice(0, 2)); if (isNaN(hh)) hh = 0;
+      var realUTC = Date.parse(ld + 'T' + ('0' + hh).slice(-2) + ':00:00Z') - offsetHours * 3600 * 1000;
+      if (realUTC >= startUTC && realUTC < endUTC) {
+        sp += parseFloat(r.spend) || 0; clk += parseInt(r.clicks) || 0;
+        lclk += parseInt(r.inline_link_clicks) || 0; imp += parseInt(r.impressions) || 0;
+      }
+    });
+    return { spend: sp, clicks: clk, linkClicks: lclk, impressions: imp };
+  }
 
   function statusBadge(s) {
     var m = {1:'ACTIVE',2:'DISABLED',3:'UNSETTLED',7:'PENDING',9:'IN GRACE'};
@@ -1285,7 +1304,7 @@ html,body{background:#fbfcfd!important}
       chain = chain.then(function() {
         /* Traz o GASTO dos ult. 7 dias JUNTO (insights aninhado) p/ filtrar so contas COM atividade
            — nao puxar 200+ contas zeradas na aba CBO Calculator (deixava o dash lento e estourava rate limit). */
-        return fetchAllAdAccounts(tk, 'name,account_status,insights.date_preset(last_7d){spend}').then(function(res) {
+        return fetchAllAdAccounts(tk, 'name,account_status,timezone_offset_hours_utc,insights.date_preset(last_7d){spend}').then(function(res) {
           (res.data || []).forEach(function(a) { var id = a.id.replace('act_',''); if (!map[id]) { map[id] = a; map[id]._tk = tk; } });
         }).catch(function(e) { console.warn(e); });
       });
@@ -1328,7 +1347,7 @@ html,body{background:#fbfcfd!important}
                  ignora, pois exige lifetime_budget). */
               return !!c.name && (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0) && nu.indexOf('SUBSTITUIDA') < 0 && (!!c.lifetime_budget || !!c.daily_budget);
             }).forEach(function(c) {
-              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; camps.push(c);
+              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; c._acctOffset = acc.timezone_offset_hours_utc; camps.push(c);
             });
           }).catch(function(){});
         })).then(nextBatch);
@@ -1362,6 +1381,10 @@ html,body{background:#fbfcfd!important}
     var sinceD = new Date(); sinceD.setMonth(sinceD.getMonth() - 36);
     var sinceDay = sinceD.toISOString().split('T')[0];
     var totalRange = encodeURIComponent(JSON.stringify({ since: sinceDay, until: untilDay }));
+    /* FUSO: se o periodo for de 1 DIA (hoje/ontem) e a conta NAO estiver em UTC-3, puxamos por HORA e somamos
+       so as horas que caem no dia do Brasil (senao a Meta le o time_range no fuso da conta e desalinha). */
+    var singleDay = (_pd && _pd.since === _pd.until) ? _pd.since : null;
+    var hourlyWide = singleDay ? encodeURIComponent(JSON.stringify({ since: shiftDay(singleDay, -1), until: shiftDay(singleDay, 1) })) : null;
     document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Carregando metricas de '+camps.length+' campanhas CBO ('+periodLabel()+')...</td></tr>';
     var idx = 0;
     function nextBatch() {
@@ -1396,17 +1419,20 @@ html,body{background:#fbfcfd!important}
       }
       var batch = camps.slice(idx, idx+6); idx += 6;
       return Promise.all(batch.map(function(c) {
+        var offBr = c._acctOffset != null && Number(c._acctOffset) !== -3;
+        var useHourly = !!(singleDay && offBr); /* conta fora de UTC-3 + periodo de 1 dia -> soma por hora no dia BR */
         var totalUrl = API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&time_range='+totalRange+'&access_token='+c._tk;
         /* Todos os anuncios da campanha para contar total x rejeitados/com erro. */
         var adsUrl = API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+c._tk;
         /* Conjuntos (ad sets): limite de gasto atual (lifetime_spend_cap) + gasto vitalicio de cada um,
            p/ a regra de LIMITAR GASTO (soft-stop) e p/ detectar campanha ja limitada. */
         var adsetsUrl = API+'/'+c.id+'/adsets?fields=id,name,effective_status,bid_amount,lifetime_spend_cap,insights.date_preset(maximum){spend}&limit=200&access_token='+c._tk;
+        var periodUrl = useHourly
+          ? (API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,impressions&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range='+hourlyWide+'&access_token='+c._tk)
+          : (API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&access_token='+c._tk);
         var calls = isLifetime
           ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
-          : [fj(totalUrl),
-             fj(API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&access_token='+c._tk),
-             fj(adsUrl), fj(adsetsUrl)];
+          : [fj(totalUrl), fj(periodUrl), fj(adsUrl), fj(adsetsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
           c._spend = t ? parseFloat(t.spend) : 0;
@@ -1420,6 +1446,15 @@ html,body{background:#fbfcfd!important}
             c._cpc = t ? (parseFloat(t.cost_per_inline_link_click) || 0) : 0;
             c._ctr = t ? (parseFloat(t.inline_link_click_ctr) || 0) : 0; /* CTR de link (%), da Meta */
             adsRes = res[1];
+          } else if (useHourly) {
+            /* Conta fora de UTC-3: soma so as horas do dia BR (fuso da conta -> UTC -> dia Brasil). */
+            var agg = sumBrDayHourly((res[1] && res[1].data) || [], singleDay, Number(c._acctOffset));
+            c._periodSpend = agg.spend;
+            c._clicks = agg.clicks;
+            c._linkClicks = agg.linkClicks;
+            c._cpc = agg.linkClicks > 0 ? (agg.spend / agg.linkClicks) : 0;
+            c._ctr = agg.impressions > 0 ? (agg.linkClicks / agg.impressions * 100) : 0;
+            adsRes = res[2];
           } else {
             var p = res[1].data && res[1].data[0];
             c._periodSpend = p ? parseFloat(p.spend) : 0;
@@ -2827,21 +2862,19 @@ html,body{background:#fbfcfd!important}
     var useTk = camp._tk;
     var DEADSET = ['DISAPPROVED','PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED'];
     var isActiveSet = function(s){ return DEADSET.indexOf((s.effective_status || '').toUpperCase()) < 0; };
-    /* 1) busca TODOS os conjuntos (paginado) e filtra os ATIVOS. */
-    fjPaged(API + '/' + camp.id + '/adsets?fields=id,name,effective_status&limit=200&access_token=' + useTk).then(function(list){
-      var actSets = (list || []).filter(isActiveSet);
-      if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo. Recarregue as campanhas.'); restore(); return; }
-      if (!confirm('Setar ' + lbl + ' $' + val + ' em TODOS os ' + actSets.length + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) { restore(); return; }
-      /* 2) aplica bid_amount via BATCH API — lotes de 50 (1 chamada HTTP por lote). */
+    var matches = function(v){ return v != null && Math.abs(parseInt(v) - cents) <= 1; };
+    var adsetsUrl = function(){ return API + '/' + camp.id + '/adsets?fields=id,name,effective_status,bid_amount&limit=200&access_token=' + useTk; };
+    var lastErr = '';
+    /* Aplica bid_amount via BATCH API (lotes de 50) SO nos ids passados. Sub-request que falhar fica p/ a proxima rodada. */
+    function batchApply(ids){
       var chunks = [];
-      for (var k = 0; k < actSets.length; k += 50) chunks.push(actSets.slice(k, k + 50));
-      var okN = 0, errs = [];
+      for (var k = 0; k < ids.length; k += 50) chunks.push(ids.slice(k, k + 50));
       var seq = Promise.resolve();
-      chunks.forEach(function(chunk, ci){
+      chunks.forEach(function(chunk){
         seq = seq.then(function(){
           return withTokenFallback(useTk, function(tk){
             var body = new URLSearchParams();
-            body.append('batch', JSON.stringify(chunk.map(function(s){ return { method: 'POST', relative_url: s.id, body: 'bid_amount=' + cents }; })));
+            body.append('batch', JSON.stringify(chunk.map(function(id){ return { method: 'POST', relative_url: id, body: 'bid_amount=' + cents }; })));
             body.append('access_token', tk);
             return fetch(API + '/', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
               .then(function(r){ return r.json(); })
@@ -2849,25 +2882,40 @@ html,body{background:#fbfcfd!important}
           })
           .then(function(r){ useTk = r.tk; camp._tk = r.tk;
             var arr = r.result;
-            if (Array.isArray(arr)) arr.forEach(function(resp, ix){
-              if (resp && resp.code === 200) okN++;
-              else { var em = ''; try { em = JSON.parse(resp.body).error.message; } catch (e) {} errs.push((chunk[ix].name || chunk[ix].id) + ': ' + (em || ('HTTP ' + (resp ? resp.code : '?')))); }
-            });
-            else errs.push('lote ' + (ci + 1) + ': resposta inesperada');
-            if (btn) btn.textContent = okN + '/' + actSets.length;
+            if (Array.isArray(arr)) arr.forEach(function(resp){ if (!(resp && resp.code === 200)) { try { lastErr = JSON.parse(resp.body).error.message; } catch (e) {} } });
           })
-          .catch(function(e){ for (var z = 0; z < chunk.length; z++) errs.push((chunk[z].name || chunk[z].id) + ': ' + (e && e.message ? e.message : e)); });
+          .catch(function(e){ lastErr = (e && e.message ? e.message : String(e)); });
         });
       });
-      return seq.then(function(){
-        if (okN === actSets.length) {
-          notifyOk(lbl + ' $' + val + ' em "' + camp.name + '"', okN + '/' + actSets.length + ' conjunto(s) · via Batch (' + chunks.length + ' chamada(s))');
-          try { logRuleHist(camp, 'BID', lbl + ' → $' + val + ' (' + okN + ' conjunto(s))', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch (e) {}
+      return seq;
+    }
+    /* Uma rodada: RE-LE o bid_amount de todos os ativos, acha os PENDENTES (!= alvo) e reaplica. Repete ate 3x. */
+    function round(n, total){
+      return fjPaged(adsetsUrl()).then(function(cur){
+        var act = (cur || []).filter(isActiveSet);
+        var tot = act.length || total;
+        var pend = act.filter(function(s){ return !matches(s.bid_amount); });
+        var okN = tot - pend.length;
+        if (btn) btn.textContent = okN + '/' + tot;
+        if (!pend.length || n >= 3) return { okN: okN, total: tot };
+        return batchApply(pend.map(function(s){ return s.id; })).then(function(){ return round(n + 1, tot); });
+      });
+    }
+    /* 1) le todos os conjuntos, confirma, 2) aplica em todos, 3) verifica+retry ate convergir. */
+    fjPaged(adsetsUrl()).then(function(list){
+      var actSets = (list || []).filter(isActiveSet);
+      if (!actSets.length) { notifyErr('Sem conjunto ativo em "' + camp.name + '"', 'Não achei conjunto ativo. Recarregue as campanhas.'); restore(); return; }
+      var total = actSets.length;
+      if (!confirm('Setar ' + lbl + ' $' + val + ' em TODOS os ' + total + ' conjunto(s) ativo(s) de "' + camp.name + '"?')) { restore(); return; }
+      return batchApply(actSets.map(function(s){ return s.id; })).then(function(){ return round(0, total); }).then(function(res){
+        if (res.okN >= res.total) {
+          notifyOk(lbl + ' $' + val + ' em "' + camp.name + '"', res.okN + '/' + res.total + ' conjunto(s) · via Batch');
+          try { logRuleHist(camp, 'BID', lbl + ' → $' + val + ' (' + res.okN + ' conjunto(s))', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch (e) {}
           closeCboDetail();
           renderCBO();
         } else {
-          var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(errs.join(' '));
-          notifyErr(lbl + ': ' + okN + '/' + actSets.length + ' em "' + camp.name + '"', (errs[0] || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
+          var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(lastErr);
+          notifyErr(lbl + ': ' + res.okN + '/' + res.total + ' em "' + camp.name + '"', (lastErr || 'alguns conjuntos não pegaram') + (tokenBad ? ' TOKEN INVÁLIDO.' : '') + ' Tente de novo.');
           restore();
         }
       });
