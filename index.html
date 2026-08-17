@@ -529,6 +529,22 @@ html,body{background:#fbfcfd!important}
   }
   function setSpin(on) { var el = document.getElementById('spinIco'); if (el) el.style.display = on ? 'inline-block' : 'none'; }
   function fj(url) { return fetch(url).then(function(r) { return r.json(); }); }
+  /* GET com RETRY em rate limit / erro transitorio da Meta ("User request limit reached" code 17, app limit
+     code 4, code 613, is_transient) — evita o "anuncios: NAO carregou" em campanha grande. Backoff 1,2s/2,4s/4,8s. */
+  function fjRetry(url, _try) {
+    _try = _try || 0;
+    return fj(url).then(function(d) {
+      if (d && d.error) {
+        var c = d.error.code, msg = d.error.message || '';
+        var rate = c === 17 || c === 4 || c === 613 || c === 80004 || d.error.is_transient
+                 || /request limit reached|rate limit|reduce the amount|calls to this api|temporar|please (?:retry|try again)/i.test(msg);
+        if (rate && _try < 3) {
+          return new Promise(function(res){ setTimeout(res, 1200 * Math.pow(2, _try)); }).then(function(){ return fjRetry(url, _try + 1); });
+        }
+      }
+      return d;
+    }).catch(function(){ return { error: { message: 'falha de rede' } }; });
+  }
   /* Segue paginacao do Graph API (data.paging.next) e devolve TODOS os itens. */
   function fjPaged(url) {
     var all = [];
@@ -1417,7 +1433,7 @@ html,body{background:#fbfcfd!important}
           });
         });
       }
-      var batch = camps.slice(idx, idx+6); idx += 6;
+      var batch = camps.slice(idx, idx+4); idx += 4; /* lote menor (4) reduz a rajada e evita o rate limit da Meta */
       return Promise.all(batch.map(function(c) {
         var offBr = c._acctOffset != null && Number(c._acctOffset) !== -3;
         var useHourly = !!(singleDay && offBr); /* conta fora de UTC-3 + periodo de 1 dia -> soma por hora no dia BR */
@@ -1431,8 +1447,8 @@ html,body{background:#fbfcfd!important}
           ? (API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,impressions&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range='+hourlyWide+'&access_token='+c._tk)
           : (API+'/'+c.id+'/insights?fields=spend,clicks,inline_link_clicks,cpc,cost_per_inline_link_click,inline_link_click_ctr&'+periodParam+'&access_token='+c._tk);
         var calls = isLifetime
-          ? [fj(totalUrl), fj(adsUrl), fj(adsetsUrl)]
-          : [fj(totalUrl), fj(periodUrl), fj(adsUrl), fj(adsetsUrl)];
+          ? [fjRetry(totalUrl), fjRetry(adsUrl), fjRetry(adsetsUrl)]
+          : [fjRetry(totalUrl), fjRetry(periodUrl), fjRetry(adsUrl), fjRetry(adsetsUrl)];
         return Promise.all(calls).then(function(res) {
           var t = res[0].data && res[0].data[0];
           c._spend = t ? parseFloat(t.spend) : 0;
