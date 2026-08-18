@@ -371,6 +371,29 @@ html,body{background:#fbfcfd!important}
 <script>
 (function() {
   'use strict';
+  /* ===== ISOLAMENTO POR INSTANCIA (multi-dash no mesmo dominio) =====
+     No GitHub Pages varios repos ficam no MESMO dominio (emsmarkt.github.io/meta-dash, /meta-dash-2...), e o
+     localStorage e por DOMINIO — sem isso, os dashes compartilhariam/sobrescreveriam tokens. Aqui cada LINK
+     (path) ganha seu proprio namespace de localStorage (tokens/config separados). A PRIMEIRA instancia a abrir
+     "reivindica" as chaves antigas (sem prefixo) p/ o seu namespace — assim o dash ATUAL nao perde o token;
+     os dashes seguintes comecam limpos e voce cola outros tokens. */
+  (function(){
+    try {
+      var seg = (location.pathname || '/').replace(/\/(index\.html)?$/, '').split('/').filter(Boolean);
+      var slug = seg.length ? seg[seg.length - 1] : 'root';
+      var PFX = '@' + slug + '::';
+      var g = localStorage.getItem.bind(localStorage), s = localStorage.setItem.bind(localStorage), r = localStorage.removeItem.bind(localStorage);
+      if (!g('@@ns_claimed')) {
+        var legacy = [];
+        for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf('@') !== 0) legacy.push(k); }
+        legacy.forEach(function(k){ if (g(PFX + k) == null) s(PFX + k, g(k)); });
+        s('@@ns_claimed', slug);
+      }
+      localStorage.getItem = function(k){ return g(PFX + k); };
+      localStorage.setItem = function(k, v){ return s(PFX + k, v); };
+      localStorage.removeItem = function(k){ return r(PFX + k); };
+    } catch (e) {}
+  })();
   var ENG = ['PAGE_LIKES','POST_ENGAGEMENT','VIDEO_VIEWS','LINK_CLICKS','REACH','BRAND_AWARENESS','OUTCOME_ENGAGEMENT','OUTCOME_AWARENESS','EVENT_RESPONSES','MESSAGES'];
   var SALES = ['CONVERSIONS','OUTCOME_SALES','PRODUCT_CATALOG_SALES','OUTCOME_APP_PROMOTION','APP_INSTALLS','LEAD_GENERATION','STORE_VISITS','OUTCOME_LEADS'];
   var API = 'https://graph.facebook.com/v21.0';
@@ -475,7 +498,15 @@ html,body{background:#fbfcfd!important}
   /* URL do Worker (Cloudflare) FIXA no codigo — igual p/ todos que acessam (nao pede a cada um).
      Se mudar o worker, troque so esta linha. (localStorage 'wk_url' ainda sobrescreve, se existir.) */
   var WK_URL_DEFAULT = 'https://meta-robo.emersondomarketing.workers.dev';
-  function getWkUrl() { try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
+  /* ===== INSTANCIA / ISOLAMENTO DO ROBO =====
+     Dash 1 (PRIMARY) fala com o robo (interruptor LIVE/DRY, historico do robo, /applied). Qualquer OUTRO link
+     (path diferente) roda ISOLADO: NAO fala com o worker -> sem Telegram, sem regras automatizadas, sem
+     historico do robo, e as acoes manuais dele NAO aparecem no dash 1. Historico so LOCAL (deste dash). */
+  var PRIMARY_DASH_SLUG = 'meta-dash'; /* <-- path/repo do dash 1. Se mudar, ajuste aqui. */
+  var DASH_SLUG = (function(){ try { var seg = (location.pathname || '/').replace(/\/(index\.html)?$/, '').split('/').filter(Boolean); return seg.length ? seg[seg.length - 1] : 'root'; } catch(e){ return 'root'; } })();
+  var ISOLATED = !(DASH_SLUG === PRIMARY_DASH_SLUG || DASH_SLUG === 'root' || DASH_SLUG === 'dash');
+  /* ISOLADO -> getWkUrl() devolve '' -> todas as chamadas ao worker (guardadas por `if(u)`) sao puladas. */
+  function getWkUrl() { if (ISOLATED) return ''; try { var v = (localStorage.getItem('wk_url') || '').trim(); return (v || WK_URL_DEFAULT).replace(/\/+$/,''); } catch(e) { return WK_URL_DEFAULT; } }
   /* TOAST no canto sup. direito. kind 'err' = vermelho (erro, some em 20s) | 'ok' = verde (sucesso, 8s).
      Fecha no x tambem. NAO manda pro Telegram (removido a pedido do usuario 11/07). */
   function showToast(kind, context, msg) {
@@ -3583,6 +3614,13 @@ html,body{background:#fbfcfd!important}
   (function(){
     var aac = document.getElementById('autoApplyChk');
     if (!aac) return;
+    /* Dash ISOLADO (dash 2): sem robo. Esconde o interruptor LIVE/DRY e mostra "Isolado — sem robô". */
+    if (ISOLATED) {
+      var w0 = document.getElementById('autoApplyWrap');
+      if (w0) { var sw = w0.querySelector('.md-switch'); if (sw) sw.style.display = 'none'; w0.style.cursor = 'default'; w0.title = 'Dash isolado: não controla o robô (sem regras/avisos automáticos).'; }
+      var t0 = document.getElementById('autoApplyTxt'); if (t0) { t0.textContent = '\u{1F513} Isolado — sem robô'; t0.style.color = '#8250df'; }
+      return;
+    }
     function setLabel(mode, pend){
       var wrap = document.getElementById('autoApplyWrap');
       var txt = document.getElementById('autoApplyTxt');
