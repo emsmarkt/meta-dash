@@ -1428,7 +1428,9 @@ html,body{background:#fbfcfd!important}
               /* Inclui CBO + TESTE (p/ os filtros da aba). ABO tem aba propria. Exige orcamento no nivel da CAMPANHA
                  — vitalicio OU diario. As de orcamento DIARIO entram so p/ VISUALIZAR (sem regra; o worker tbm as
                  ignora, pois exige lifetime_budget). */
-              return !!c.name && (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0) && nu.indexOf('SUBSTITUIDA') < 0 && nu.indexOf('MORTA') < 0 && (!!c.lifetime_budget || !!c.daily_budget);
+              /* Nome elegivel: instancia principal -> CBO/TESTE; instancia isolada -> SALE/SALES (indexOf('SALE') pega os dois). */
+              var nameOk = ISOLATED ? (nu.indexOf('SALE') >= 0) : (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0);
+              return !!c.name && nameOk && nu.indexOf('SUBSTITUIDA') < 0 && nu.indexOf('MORTA') < 0 && (!!c.lifetime_budget || !!c.daily_budget);
             }).forEach(function(c) {
               c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; c._acctOffset = acc.timezone_offset_hours_utc; camps.push(c);
             });
