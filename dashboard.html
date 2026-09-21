@@ -621,6 +621,69 @@ html,body{background:#fbfcfd!important}
     }
     return go(url);
   }
+  /* Igual fjPagedR, mas DISTINGUE "leitura falhou" de "0 itens de verdade": devolve {items, err}.
+     err != null => a Meta recusou (rate limit/rede) e NAO da p/ confiar no vazio. Usado p/ confirmar
+     campanha-a-campanha se ela REALMENTE nao tem anuncio (mata o falso "SEM ANUNCIO"). */
+  function fjPagedChecked(url) {
+    var all = [], err = null;
+    function go(u) {
+      return fjRetry(u).then(function(d) {
+        if (d && d.error) { err = d.error.message || 'erro de leitura'; return; }
+        if (d && d.data && d.data.length) all = all.concat(d.data);
+        if (d && d.paging && d.paging.next) return go(d.paging.next);
+      });
+    }
+    return go(url).then(function(){ return { items: all, err: err }; });
+  }
+  /* Confirma, campanha-a-campanha, as ATIVAS que ficaram com 0 anuncios ou erro de leitura no lote.
+     Busca DEDICADA (com retry) que distingue erro x vazio real: se trouxer anuncios -> corrige os
+     contadores (era gap do lote); se a Meta responder 0 DE VERDADE -> mantem "SEM ANUNCIO"; se a leitura
+     FALHAR -> marca "nao carregou/recarregue" (nunca o alarme falso). Elimina o falso "SEM ANUNCIO". */
+  function confirmEmptyAds(list) {
+    /* SUSPEITA = campanha ENTREGANDO (ACTIVE/WITH_ISSUES) que ficou com erro de leitura, 0 anuncios TOTAIS
+       OU 0 anuncios ATIVOS. O lote (conta inteira) as vezes traz so os anuncios PAUSADOS dos conjuntos
+       inativos e PERDE os ativos do conjunto ativo (gap de paginacao) -> confirma 1-a-1 e corrige. */
+    var suspects = (list || []).filter(function(c){
+      var eff = (c.effective_status || c.status || '').toUpperCase();
+      var entregando = eff === 'ACTIVE' || eff === 'WITH_ISSUES';
+      return entregando && (c._adsErr || !c._adTotal || !c._adActive);
+    });
+    if (!suspects.length) return Promise.resolve();
+    var i = 0;
+    function classify(c, ads) {
+      var rel = ads.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s!=='ARCHIVED' && s!=='DELETED'; });
+      c._adsErr = null; c._adsLoaded = true;
+      c._adTotal = rel.length;
+      c._adActive = rel.filter(function(a){ return (a.effective_status||'').toUpperCase()==='ACTIVE'; }).length;
+      c._adRejected = rel.filter(function(a){ return (a.effective_status||'').toUpperCase()==='DISAPPROVED'; }).length;
+      c._adWithErr = rel.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='WITH_ISSUES'||s==='PENDING_REVIEW'; }).length;
+      c._adPaused = rel.filter(function(a){ var s=(a.effective_status||'').toUpperCase(); return s==='PAUSED'||s==='ADSET_PAUSED'||s==='CAMPAIGN_PAUSED'; }).length;
+    }
+    function next() {
+      if (i >= suspects.length) return Promise.resolve();
+      var c = suspects[i++], tk = c._tk;
+      if (!tk) return next();
+      var adsetsP = (c._adsets && c._adsets.length)
+        ? Promise.resolve({ items: c._adsets, err: null })
+        : fjPagedChecked(API+'/'+c.id+'/adsets?fields=id,name,effective_status,bid_amount,lifetime_spend_cap&limit=200&access_token='+tk);
+      return Promise.all([
+        fjPagedChecked(API+'/'+c.id+'/ads?fields=effective_status&limit=300&access_token='+tk),
+        adsetsP
+      ]).then(function(r){
+        var adsRes = r[0], setRes = r[1];
+        if (setRes.items && setRes.items.length && (!c._adsets || !c._adsets.length)) c._adsets = setRes.items;
+        if (adsRes.err) {
+          /* Leitura dos anuncios FALHOU (rate limit) -> nunca "SEM ANUNCIO"; mostra "nao carregou". */
+          c._adsErr = 'não consegui confirmar os anúncios (limite da Meta) — recarregue'; c._adsLoaded = false;
+        } else {
+          /* Leitura OK (mesmo que 0) -> confia. Se 0 = genuinamente sem anuncio. */
+          classify(c, adsRes.items);
+        }
+        return next();
+      }).catch(function(){ return next(); });
+    }
+    return next();
+  }
   /* Igual fjPaged, mas DEVOLVE o erro junto ({data, error}) p/ avisar token quebrado na tela
      (senao as contas daquele token somem em silencio). */
   function fjPagedE(url) {
@@ -1587,6 +1650,9 @@ html,body{background:#fbfcfd!important}
           return Promise.all([
             fetchAppliedShared()
           ]).then(function(){
+            /* Confirma 1-a-1 as campanhas ativas que ficaram "sem anuncio"/erro -> mata o falso "SEM ANUNCIO". */
+            return confirmEmptyAds(camps);
+          }).then(function(){
             cboData = camps; renderCBO();
             var sp = document.getElementById('spinCBO'); if (sp) sp.style.display='none';
             /* Auto-apply agora e responsabilidade do ROBO (interruptor LIVE/DRY). O dashboard nao auto-aplica mais. */
@@ -3066,12 +3132,16 @@ html,body{background:#fbfcfd!important}
       .then(function(r){ return r.json(); })
       .then(function(d){
         if (d.error) {
-          /* Erro transitorio do Meta ("An unexpected error... Please retry later", code 2,
-             is_transient) -> espera e tenta de novo (ate 2x, backoff 1,5s/3s). Edicao e idempotente. */
-          var msg = d.error.message || '';
-          var transient = d.error.is_transient || d.error.code === 2 || /unexpected error|please (?:retry|try again)|temporar/i.test(msg);
+          var msg = d.error.message || '', code = d.error.code;
+          /* Erro transitorio ("unexpected error / retry later", code 2, is_transient) -> retry rapido (1,5s/3s). */
+          var transient = d.error.is_transient || code === 2 || /unexpected error|please (?:retry|try again)|temporar/i.test(msg);
+          /* RATE LIMIT (#17 user, #4 app, #613 "1 call/30s por objeto", #80004) -> espera MAIS (6s/12s) e retenta. */
+          var rateLtd = code === 17 || code === 4 || code === 613 || code === 80004 || /request limit reached|rate limit|exceeded the (?:concurrent )?request|calls to this api/i.test(msg);
           if (transient && _try < 2) {
             return new Promise(function(res){ setTimeout(res, 1500 * (_try + 1)); }).then(function(){ return postForm(id, tk, params, _try + 1); });
+          }
+          if (rateLtd && _try < 2) {
+            return new Promise(function(res){ setTimeout(res, 6000 * (_try + 1)); }).then(function(){ return postForm(id, tk, params, _try + 1); });
           }
           throw new Error(msg + (d.error.error_user_msg ? ' - '+d.error.error_user_msg : ''));
         }
@@ -3166,8 +3236,13 @@ html,body{background:#fbfcfd!important}
     /* postErrs = ERRO REAL de API (token/permissao/param) — falha de verdade. stale = a Meta ACEITOU o POST
        mas o read-back ainda mostra a data antiga (atraso de propagacao OU teto da campanha). accepted = nenhum
        erro real -> a escrita foi aceita (mesmo que o read-back demore). */
-    var st = { total: 0, ok: 0, fails: [], postErrs: [], stale: [], accepted: true };
+    var st = { total: 0, ok: 0, fails: [], postErrs: [], stale: [], unsupported: [], accepted: true };
     var useTk = tk;
+    var skipIds = {}; /* conjuntos que NAO aceitam end_time (CBO lifetime: agenda so na campanha) -> nao re-tenta */
+    /* Erro ESTRUTURAL do conjunto (nao e falha de token/rede/param): a Meta nao deixa editar end_time
+       nesse conjunto (tipico de CBO vitalicio, onde a agenda vive no stop_time da CAMPANHA). Nao e erro real:
+       o sucesso passa a se basear no stop_time da campanha. */
+    var STRUCT = /unsupported post request|does not exist|cannot be loaded|missing permission|does not support this operation|nonexisting field|não é possível|nao e possivel/i;
     var dayOf = function(v){ if (!v) return null; return (typeof v === 'string') ? v.slice(0,10) : new Date(v*1000).toISOString().split('T')[0]; };
     var DEAD_ADS = ['DISAPPROVED','PAUSED','ADSET_PAUSED','CAMPAIGN_PAUSED','ARCHIVED','DELETED'];
     /* FALLBACK: conjuntos JA carregados na tabela (camp._adsets) filtrados p/ os nao-pausados. Usado quando
@@ -3206,44 +3281,73 @@ html,body{background:#fbfcfd!important}
         })
         .catch(function(){ return fromPre(); }); /* a Meta cortou a busca dos conjuntos -> usa os ja carregados */
     }
-    function postOne(s) {
-      return withTokenFallback(useTk, function(t){ return postForm(s.id, t, { end_time: endIso }); })
-        .then(function(r){ useTk = r.tk; if (onTk) onTk(useTk); return null; })
-        .catch(function(e){ return (s.name || s.id) + ': ' + (e && e.message ? e.message : e); });
+    /* Aplica o end_time via BATCH API (lotes de 50, 1 chamada HTTP p/ VARIOS conjuntos = objetos DIFERENTES).
+       Isso evita o limite "1 call por 30s por OBJETO" (#613) que os POSTs um-a-um disparavam. Token pinado
+       (useTk) — sem fallback de token na escrita. Classifica cada sub-resposta: 200=ok; estrutural=ignora
+       (conjunto sem end_time proprio, CBO); rate-limit/#613=fica pendente p/ retry; resto=erro REAL. */
+    function batchEnd(sets) {
+      var chunks = [];
+      for (var k = 0; k < sets.length; k += 50) chunks.push(sets.slice(k, k + 50));
+      var errs = [];
+      var seq = Promise.resolve();
+      chunks.forEach(function(chunk) {
+        seq = seq.then(function() {
+          var body = new URLSearchParams();
+          body.append('batch', JSON.stringify(chunk.map(function(s){ return { method: 'POST', relative_url: String(s.id), body: 'end_time=' + encodeURIComponent(endIso) }; })));
+          body.append('access_token', useTk);
+          return fetch(API + '/', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
+            .then(function(r){ return r.json(); })
+            .then(function(arr){
+              if (arr && arr.error) { errs.push(arr.error.message || 'batch error'); return; }
+              if (!Array.isArray(arr)) return;
+              arr.forEach(function(resp, ix){
+                var s = chunk[ix];
+                if (resp && resp.code === 200) return; /* ok */
+                var msg = ''; try { msg = JSON.parse(resp.body).error.message; } catch(e) { msg = 'erro ' + (resp && resp.code); }
+                var full = (s.name || s.id) + ': ' + msg;
+                if (STRUCT.test(msg)) { skipIds[s.id] = true; if (st.unsupported.indexOf(full) < 0) st.unsupported.push(full); } /* conjunto nao edita end_time (CBO) -> ignora */
+                else errs.push(full); /* erro REAL ou rate-limit (#613/#17...) -> tenta de novo na proxima rodada */
+              });
+            })
+            .catch(function(e){ errs.push(e && e.message ? e.message : String(e)); });
+        });
+      });
+      return seq.then(function(){ return errs; });
     }
-    /* Uma rodada: le o estado atual e posta SEQUENCIAL so nos conjuntos que ainda nao estao na data. */
+    /* Uma rodada: RE-LE os conjuntos, acha os PENDENTES (fora da data, nao-estruturais) e aplica em BATCH.
+       Retry ate 5x. Se o que sobrou for RATE LIMIT (#613 = 1 call/30s por objeto), espera MAIS (12s) p/ a
+       janela abrir; senao 2s. Assim o #613 vira sucesso na proxima rodada em vez de erro na tela. */
     function round(n) {
       return listSets().then(function(sets) {
         if (!sets.length) return;
-        st.total = sets.length;
-        var pend = sets.filter(function(s){ return dayOf(s.end_time) !== wantDay; });
-        if (!pend.length) return; /* todos ja com a data certa */
-        var errs = [], i = 0;
-        function next() {
-          if (i >= pend.length) return Promise.resolve();
-          var s = pend[i++];
-          return postOne(s).then(function(err){ if (err) errs.push(err); return next(); });
-        }
-        return next().then(function(){
-          st.postErrs = errs; /* so os ERROS REAIS de API desta rodada */
-          if (n < 2) return round(n + 1); /* confere de novo e repete nos que faltaram */
+        var pend = sets.filter(function(s){ return dayOf(s.end_time) !== wantDay && !skipIds[s.id]; });
+        if (!pend.length) { st.postErrs = []; return; } /* nada mais p/ escrever */
+        return batchEnd(pend).then(function(errs){
+          st.postErrs = errs; /* erros da rodada atual (rate-limit some no retry; real persiste) */
+          if (n < 5 && errs.length) {
+            var isRate = errs.some(function(m){ return /#?613|#?17\b|#?4\b|rate limit|exceeded the (?:concurrent )?request|calls to this api/i.test(m); });
+            var wait = isRate ? 12000 : 2000;
+            return new Promise(function(r){ setTimeout(r, wait); }).then(function(){ return round(n + 1); });
+          }
         });
       });
     }
     return round(0).then(function(){
       return listSets().then(function(sets){
-        if (sets.length) st.total = sets.length;
-        st.ok = sets.filter(function(s){ return dayOf(s.end_time) === wantDay; }).length;
+        /* Conta so os conjuntos EDITAVEIS (exclui os estruturais que a Meta nao deixa mudar). */
+        var writable = sets.filter(function(s){ return !skipIds[s.id]; });
+        st.total = writable.length;
+        st.ok = writable.filter(function(s){ return dayOf(s.end_time) === wantDay; }).length;
         st.accepted = st.postErrs.length === 0; /* nenhum erro real -> Meta aceitou as escritas */
-        /* Conjuntos fora da data SEM erro real = STALE (read-back atrasado / teto da campanha), nao erro. */
+        /* Conjuntos editaveis fora da data SEM erro real = STALE (read-back atrasado / teto da campanha), nao erro. */
         if (st.ok < st.total) {
           var known = st.postErrs.join(' ');
-          sets.forEach(function(s){
+          writable.forEach(function(s){
             var d = dayOf(s.end_time);
             if (d !== wantDay && known.indexOf(s.name || s.id) < 0) st.stale.push((s.name || s.id) + ': ainda ' + (d || '?'));
           });
         }
-        st.fails = st.postErrs.concat(st.stale); /* compat: lista completa p/ exibir */
+        st.fails = st.postErrs.concat(st.stale); /* compat: lista completa p/ exibir (sem os estruturais) */
         return st;
       });
     });
@@ -3256,8 +3360,11 @@ html,body{background:#fbfcfd!important}
     var useTk = prefTk, err = null, postOk = false;
     var dayOf = function(v){ if (!v) return null; return (typeof v === 'string') ? v.slice(0,10) : new Date(v*1000).toISOString().split('T')[0]; };
     function post() {
-      return withTokenFallback(useTk, function(t){ return postForm(campId, t, { stop_time: String(endTs) }); })
-        .then(function(r){ useTk = r.tk; if (onTk) onTk(useTk); err = null; postOk = true; }) /* 200 = escrita aceita */
+      /* ESCRITA do stop_time usa SO o token da campanha (useTk). Fallback p/ outros tokens numa ESCRITA
+         so gera "Object ... does not exist / missing permissions" (token de outra conta) e mascara o erro
+         real. O read-back (check) segue com fallback de token, e atualiza useTk se achar outro que leia. */
+      return postForm(campId, useTk, { stop_time: String(endTs) })
+        .then(function(){ if (onTk) onTk(useTk); err = null; postOk = true; }) /* 200 = escrita aceita */
         .catch(function(e){ err = e && e.message ? e.message : String(e); postOk = false; });
     }
     function check() {
@@ -3413,7 +3520,9 @@ html,body{background:#fbfcfd!important}
     seq
       .then(function(st){
         setTotal = st.total; setOk = st.ok; setFails = st.fails || [];
+        var setUnsup = (st.unsupported || []).length; /* conjuntos que nao editam end_time (CBO -> agenda na campanha) */
         if (setTotal) report.push('Conjuntos: ' + setOk + '/' + setTotal);
+        if (setUnsup) report.push(setUnsup + ' conjunto(s) sem data própria (CBO — agenda na campanha)');
         setFails.forEach(function(m){ report.push('  - conjunto -> ' + m); });
         if (campRes) report.push('Campanha: ' + (campRes.ok ? 'confirmada' : (campRes.postOk ? 'aceita (propagando)' : ('erro: ' + (campRes.err || '?')))));
 
