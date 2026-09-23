@@ -2981,15 +2981,17 @@ html,body{background:#fbfcfd!important}
     var realCaps = capsC.filter(function(v){ return !(lbCentsD > 0 && v >= lbCentsD); }); /* teto >= orcamento total = sem limite na pratica */
     var uniqCap = realCaps.filter(function(v, ix, a){ return a.indexOf(v) === ix; });
     var capCurTxt = realCaps.length ? (uniqCap.length === 1 ? fmtUSD(uniqCap[0]/100) : (fmtUSD(Math.min.apply(null,realCaps)/100) + '–' + fmtUSD(Math.max.apply(null,realCaps)/100))) : 'sem limite';
-    var capPre = realCaps.length ? Math.round(Math.max.apply(null,realCaps)/100) : '';
+    /* PRE-PREENCHE com o teto atual (se houver) OU com o GASTO ATUAL da campanha -> "clicar Aplicar = parar
+       no gasto de agora". Digitar um valor MAIOR = deixa gastar ate ali e para. (spent = gasto vitalicio). */
+    var capPre = realCaps.length ? Math.round(Math.max.apply(null,realCaps)/100) : Math.max(1, Math.ceil(spent));
     body += '<div class="det-row" style="align-items:center"><span class="det-k">Limite de gasto</span>'
           + '<span class="det-v" style="display:flex;align-items:center;gap:6px;justify-content:flex-end">'
-          + '<span style="font-size:11px;color:#656d76" title="teto TOTAL de gasto atual dos conjuntos ativos">' + capCurTxt + '</span>'
+          + '<span style="font-size:11px;color:#656d76" title="teto de gasto atual dos conjuntos ativos">' + capCurTxt + '</span>'
           + '<span style="font-size:11px;color:#656d76">$</span>'
-          + '<input class="cbo-inp" id="detCapInp" type="number" min="1" step="any" value="' + capPre + '" style="width:74px" title="Novo limite de gasto TOTAL por conjunto (US$)">'
+          + '<input class="cbo-inp" id="detCapInp" type="number" min="1" step="any" value="' + capPre + '" style="width:74px" title="Teto de gasto (US$). Deixe no gasto atual e Aplique p/ parar agora, ou digite um valor maior.">'
           + '<button class="save-btn" id="detCapSave" style="padding:5px 10px">Aplicar</button>'
           + '</span></div>'
-          + '<div style="font-size:10px;color:#656d76;text-align:right;margin-top:-3px">teto TOTAL de gasto de cada conjunto · aplica em ' + actSetsB.length + ' ativo(s) · <a href="#" id="detCapRemove" style="color:#0969da">remover</a></div>';
+          + '<div style="font-size:10px;color:#656d76;text-align:right;margin-top:-3px">gasto atual: ' + fmtUSD(spent) + ' · deixe nesse valor e Aplique p/ <b>parar agora</b>, ou digite um teto maior · ' + actSetsB.length + ' conjunto(s) ativo(s) · <a href="#" id="detCapRemove" style="color:#0969da">remover</a></div>';
 
     /* Sugestao de regra: reaproveita o HTML ja renderizado na celula da tabela. */
     var sugCell = document.getElementById('sugcell_'+i);
