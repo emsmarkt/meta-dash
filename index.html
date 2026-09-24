@@ -162,7 +162,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-24.1</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-24.2</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -3349,19 +3349,25 @@ html,body{background:#fbfcfd!important}
       if (!confirm(msg)) { restore(); return; }
       return batchApply(actSets).then(function(){ return round(0, total); }).then(function(res){
         syncDisplay(res.sets);
-        camp._hasCap = true;
-        if (res.okN > 0) setCapMark(camp.id, true); /* marca LOCAL: limitei -> selo LIMITADA sobrevive à recarga */
-        if (!isStop && addX > 0) { try { localStorage.setItem(daycapKey(camp), String(addX)); } catch(e){} } /* LEMBRA o X p/ amanha */
-        if (res.okN >= res.total) {
-          if (isStop) notifyOk('PAROU "' + camp.name + '"', res.okN + '/' + res.total + ' conjunto(s) — teto no gasto atual');
-          else notifyOk('Rodar +$' + addX + ' hoje em "' + camp.name + '"', res.okN + '/' + res.total + ' conjunto(s) · teto = gasto + $' + addX + ' · salvo p/ amanhã');
+        /* VERIFICAÇÃO HONESTA: lê o lifetime_spend_cap REAL que a Meta gravou nos conjuntos. */
+        var confirmados = (res.sets || []).filter(function(s){ return s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0; });
+        var confN = confirmados.length;
+        var exVal = confN ? Math.round(parseInt(confirmados[0].lifetime_spend_cap) / 100) : null;
+        var confirmadoMeta = res.okN >= res.total && confN > 0; /* SÓ sucesso se a Meta REALMENTE gravou */
+        camp._hasCap = confN > 0;
+        if (confirmadoMeta) setCapMark(camp.id, true); else setCapMark(camp.id, false); /* só marca se a Meta confirmou */
+        if (!isStop && addX > 0 && confirmadoMeta) { try { localStorage.setItem(daycapKey(camp), String(addX)); } catch(e){} }
+        if (confirmadoMeta) {
+          if (isStop) notifyOk('PAROU "' + camp.name + '"', res.okN + '/' + res.total + ' conjunto(s) · Meta confirmou teto ' + (exVal != null ? ('$' + exVal) : ''));
+          else notifyOk('Rodar +$' + addX + ' hoje em "' + camp.name + '"', res.okN + '/' + res.total + ' conjunto(s) · Meta confirmou teto ' + (exVal != null ? ('$' + exVal) : '') + ' · salvo p/ amanhã');
           try { logRuleHist(camp, 'LIMITAR_GASTO', (isStop ? 'Parar (teto no gasto atual)' : ('Rodar +$' + addX + ' hoje (teto = gasto + $' + addX + ')')) + ' (' + res.okN + ' conjunto(s))', { dailyOld: null, dailyNew: (isStop ? null : addX), endOld: null, endNew: null }); } catch (e) {}
           closeCboDetail();
           renderCBO();
         } else {
-          var amostra = (res.pend || []).slice(0, 3).map(function(s){ return (s.name || s.id) + ' ($' + (s.lifetime_spend_cap != null ? Math.round(parseInt(s.lifetime_spend_cap)/100) : '?') + ')'; }).join(', ');
+          /* A Meta NÃO gravou o teto (confN=0) OU sobrou conjunto. Mostra o ERRO REAL da Meta (não engole). */
           var tokenBad = /application has been deleted|access token|OAuth|code 190|session/i.test(lastErr);
-          notifyErr('Limite de gasto: ' + res.okN + '/' + res.total + ' em "' + camp.name + '"', 'Ficaram: ' + (amostra || '?') + (res.pend.length > 3 ? ' …+' + (res.pend.length - 3) : '') + '. ' + (lastErr || '') + (tokenBad ? ' TOKEN INVÁLIDO.' : ''));
+          var motivo = lastErr ? ('Meta: ' + lastErr) : (confN === 0 ? 'A Meta aceitou a chamada mas NÃO gravou o teto (lifetime_spend_cap voltou vazio). Provável: campanha de orçamento DIÁRIO não aceita esse teto no conjunto. Me avise que troco o mecanismo.' : 'Alguns conjuntos não pegaram.');
+          notifyErr('Limite NÃO aplicado em "' + camp.name + '"', motivo + (tokenBad ? ' TOKEN INVÁLIDO.' : ''));
           renderCBO();
           restore();
         }
