@@ -162,7 +162,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-23.6</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-23.7</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -584,6 +584,22 @@ html,body{background:#fbfcfd!important}
     var u = getWkUrl();
     if (!u) { appliedShared = {}; return Promise.resolve(); }
     return fetch(u + '/applied').then(function(r){ return r.json(); }).then(function(m){ appliedShared = (m && typeof m === 'object') ? m : {}; }).catch(function(){ appliedShared = {}; });
+  }
+  /* CONFIG do LIMITE DE MADRUGADA (do worker): { campId: {v, en, name} }. O robo aplica 00:00 e remove 07:00. */
+  var madCfg = {};
+  function fetchMadrugada() {
+    var u = getWkUrl();
+    if (!u) { madCfg = {}; return Promise.resolve(); }
+    return fetch(u + '/madrugada').then(function(r){ return r.json(); }).then(function(m){ madCfg = (m && typeof m === 'object') ? m : {}; }).catch(function(){ madCfg = {}; });
+  }
+  /* Salva/atualiza (ou remove) o limite de madrugada de uma campanha no worker. */
+  function saveMadrugada(campId, campName, value, enabled) {
+    var u = getWkUrl();
+    if (!u) { notifyErr('Sem robô nesta instância', 'O limite de madrugada é aplicado pelo robô (só no dash principal).'); return Promise.resolve(); }
+    var payload = (value > 0 && enabled) ? { id: campId, v: value, en: true, name: campName } : { id: campId, remove: true };
+    return fetch(u + '/madrugada', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(res){ if (res && res.madrugada) madCfg = res.madrugada; return res; });
   }
   function setSpin(on) { var el = document.getElementById('spinIco'); if (el) el.style.display = on ? 'inline-block' : 'none'; }
   function fj(url) { return fetch(url).then(function(r) { return r.json(); }); }
@@ -1661,7 +1677,8 @@ html,body{background:#fbfcfd!important}
           });
           /* Estado compartilhado de regras aplicadas. (Aviso de 3 dias removido.) */
           return Promise.all([
-            fetchAppliedShared()
+            fetchAppliedShared(),
+            fetchMadrugada()
           ]).then(function(){
             /* RENDERIZA JA (nao trava a tela). A confirmacao dos "suspeitos" roda em SEGUNDO PLANO e
                re-renderiza quando terminar -> dash rapido + o falso "SEM ANUNCIO" some logo depois. */
@@ -3010,6 +3027,22 @@ html,body{background:#fbfcfd!important}
           + '<button id="detCapRemove" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.02em;color:#fff;background:#cf222e;border:none;border-radius:6px;padding:6px 12px;cursor:pointer" title="Remover o limite de gasto (volta a rodar sem teto)">Remover limite</button>'
           + '</div>';
 
+    /* 🌙 LIMITE DE MADRUGADA (automatico pelo robo): valor $ que a campanha pode gastar na madrugada
+       (00:00-07:00 BR). O robo aplica o teto à meia-noite e REMOVE de manhã, sozinho, toda noite. */
+    if (!ISOLATED) {
+      var madNow = (madCfg && madCfg[camp.id]) ? madCfg[camp.id] : null;
+      var madOn = !!(madNow && madNow.en && madNow.v > 0);
+      var madPre = (madNow && madNow.v > 0) ? Math.round(madNow.v) : '';
+      body += '<div class="det-row" style="align-items:center;border-top:1px dashed #e4e8ee;padding-top:10px;margin-top:6px"><span class="det-k">🌙 Limite madrugada</span>'
+            + '<span class="det-v" style="display:flex;align-items:center;gap:6px;justify-content:flex-end">'
+            + '<span style="font-size:11px;font-weight:600;color:' + (madOn ? '#8250df' : '#656d76') + '">' + (madOn ? ('ativo: máx $' + Math.round(madNow.v)) : 'desligado') + '</span>'
+            + '<span style="font-size:11px;color:#656d76">$</span>'
+            + '<input class="cbo-inp" id="detMadInp" type="number" min="1" step="any" value="' + madPre + '" placeholder="ex: 30" style="width:70px" title="Máx US$ que a campanha gasta na madrugada (00:00–07:00 BR).">'
+            + '<button class="save-btn" id="detMadSave" style="padding:5px 10px;background:#8250df;border-color:#8250df">Salvar</button>'
+            + '</span></div>'
+            + '<div style="font-size:10px;color:#656d76;text-align:right;margin-top:-3px">o robô aplica o teto à <b>00:00</b> e remove às <b>07:00</b> (BR), sozinho toda noite · ' + (madOn ? '<a href="#" id="detMadOff" style="color:#cf222e">desligar</a>' : 'salve um valor p/ ativar') + '</div>';
+    }
+
     /* Sugestao de regra: reaproveita o HTML ja renderizado na celula da tabela. */
     var sugCell = document.getElementById('sugcell_'+i);
     if (sugCell && sugCell.innerHTML.trim()) {
@@ -3047,6 +3080,23 @@ html,body{background:#fbfcfd!important}
     if (capRem) capRem.addEventListener('click', function(e){ e.preventDefault(); removeSpendCap(i); });
     var detLimNow = document.getElementById('detLimitNow');
     if (detLimNow) detLimNow.addEventListener('click', function(e){ e.preventDefault(); limitSpendNow(i); });
+    var detMadSave = document.getElementById('detMadSave');
+    if (detMadSave) detMadSave.addEventListener('click', function(){
+      var mi = document.getElementById('detMadInp'); var mv = mi ? parseFloat(mi.value) : 0;
+      if (!(mv > 0)) { alert('Digite o máximo (US$) p/ a madrugada. Ex: 30'); return; }
+      detMadSave.disabled = true; detMadSave.textContent = '…';
+      saveMadrugada(camp.id, camp.name, mv, true).then(function(){
+        notifyOk('Madrugada configurada em "' + camp.name + '"', 'Máx $' + mv + ' na madrugada (00:00–07:00 BR). O robô aplica e remove sozinho.');
+        closeCboDetail(); renderCBO();
+      }).catch(function(e){ detMadSave.disabled = false; detMadSave.textContent = 'Salvar'; notifyErr('Erro ao salvar madrugada', e && e.message ? e.message : ''); });
+    });
+    var detMadOff = document.getElementById('detMadOff');
+    if (detMadOff) detMadOff.addEventListener('click', function(e){ e.preventDefault();
+      saveMadrugada(camp.id, camp.name, 0, false).then(function(){
+        notifyOk('Madrugada DESLIGADA em "' + camp.name + '"', 'A campanha não será mais limitada na madrugada pelo robô.');
+        closeCboDetail(); renderCBO();
+      }).catch(function(err){ notifyErr('Erro ao desligar madrugada', err && err.message ? err.message : ''); });
+    });
 
     m.classList.add('show');
   }
@@ -3625,7 +3675,9 @@ html,body{background:#fbfcfd!important}
       : (isCapped ? '🔒 LIMITADA' : 'sem limite');
     var remembered = getDayCap(camp); /* ultimo "rodar hoje" salvo */
     var preVal = remembered > 0 ? Math.round(remembered) : '';
+    var mad = (!ISOLATED && madCfg && madCfg[camp.id] && madCfg[camp.id].en && madCfg[camp.id].v > 0) ? madCfg[camp.id] : null;
     return '<div style="display:flex;flex-direction:column;gap:3px;min-width:104px">'
+      + (mad ? '<span style="font-size:9px;font-weight:700;color:#8250df" title="Robô limita na madrugada (00:00–07:00 BR)">🌙 madrugada máx $' + Math.round(mad.v) + '</span>' : '')
       + '<span style="font-size:9px;color:#0969da;text-transform:uppercase;letter-spacing:.03em" title="quanto você quer rodar HOJE — o teto vira o gasto atual + esse valor">Rodar hoje</span>'
       + '<div style="display:flex;align-items:center;gap:3px">'
       + '<span style="font-size:11px;color:#656d76">$</span>'
