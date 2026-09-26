@@ -162,7 +162,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-25.4</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-26.1</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -3077,10 +3077,15 @@ html,body{background:#fbfcfd!important}
 
     /* LIMITE DE GASTO por DIA: o usuario digita QUANTO rodar HOJE; o dash soma ao gasto atual e seta o teto. */
     var lbCentsD = parseInt(camp.lifetime_budget) || 0;
-    var capsC = actSetsB.map(function(s){ return (s.lifetime_spend_cap != null && +s.lifetime_spend_cap > 0) ? +s.lifetime_spend_cap : null; }).filter(function(v){ return v != null; });
-    var realCaps = capsC.filter(function(v){ return !(lbCentsD > 0 && v >= lbCentsD); }); /* teto >= orcamento total = sem limite na pratica */
-    var uniqCap = realCaps.filter(function(v, ix, a){ return a.indexOf(v) === ix; });
-    var capCurTxt = realCaps.length ? ('teto ' + (uniqCap.length === 1 ? fmtUSD(uniqCap[0]/100) : (fmtUSD(Math.min.apply(null,realCaps)/100) + '–' + fmtUSD(Math.max.apply(null,realCaps)/100)))) : 'sem limite';
+    /* Mesma detecção CONFIÁVEL da tabela: DIÁRIA = spend_cap; VITALÍCIA = flags (_hasCap/_capTotal/_capUnknown).
+       NUNCA "sem limite" sem confirmar os conjuntos -> "verificando…" no lugar. */
+    var isLifeD = lbCentsD > 0;
+    var scD = (camp.spend_cap != null && camp.spend_cap !== '') ? parseInt(camp.spend_cap) : 0;
+    var hasCampCapD = scD > 0 && scD < 900000000000000;
+    var cappedD = isLifeD ? !!camp._hasCap : hasCampCapD;
+    var capCurTxt = cappedD
+      ? ('teto ' + fmtUSD((isLifeD ? (camp._capTotalCents || 0) : scD) / 100))
+      : ((isLifeD && camp._capUnknown) ? '⏳ verificando…' : 'sem limite');
     var rememberedD = getDayCap(camp);
     var capPre = rememberedD > 0 ? Math.round(rememberedD) : '';
     body += '<div class="det-row" style="align-items:center"><span class="det-k">Rodar hoje ($)</span>'
@@ -3536,14 +3541,23 @@ html,body{background:#fbfcfd!important}
      TOTAL efetivo dos tetos ativos (camp._capTotalCents) p/ mostrar no selo. Diário NÃO usa isto (usa spend_cap). */
   function recomputeLifeCap(camp) {
     var lbCents = parseInt(camp.lifetime_budget) || 0;
-    if (lbCents <= 0) { camp._hasCap = false; camp._capTotalCents = 0; return; }
-    var capped = false, capSum = 0;
-    (camp._adsets || []).forEach(function(s) {
-      var stt = (s.effective_status || '').toUpperCase();
+    if (lbCents <= 0) { camp._hasCap = false; camp._capTotalCents = 0; camp._capUnknown = false; return; }
+    /* Detecta o teto em QUALQUER conjunto NÃO-arquivado (não só ATIVO): campanha limitada cujo conjunto
+       capado ficou pausado/em-análise NÃO pode virar "sem limite" (evita falso negativo). Total efetivo do
+       selo prioriza os ATIVOS; se só houver capado pausado, usa a soma dos capados. */
+    var sets = (camp._adsets || []).filter(function(s){ var st = (s.effective_status || '').toUpperCase(); return st !== 'ARCHIVED' && st !== 'DELETED'; });
+    var capped = false, capSumAll = 0, capSumActive = 0;
+    sets.forEach(function(s) {
+      var st = (s.effective_status || '').toUpperCase();
       var cap = (s.lifetime_spend_cap != null) ? +s.lifetime_spend_cap : 0;
-      if (stt === 'ACTIVE' && cap > 0 && cap < lbCents * 0.98) { capSum += cap; capped = true; }
+      if (cap > 0 && cap < lbCents * 0.98) { capped = true; capSumAll += cap; if (st === 'ACTIVE') capSumActive += cap; }
     });
-    camp._hasCap = capped; camp._capTotalCents = capSum;
+    camp._hasCap = capped; camp._capTotalCents = capSumActive > 0 ? capSumActive : capSumAll;
+    /* ⚠️ NÃO CONFIRMADO: campanha vitalícia ENTREGANDO mas SEM NENHUM conjunto carregado = o lote da Meta
+       perdeu os conjuntos (rate limit). NUNCA afirmar "sem limite" aqui (era o falso "normal"): marca
+       _capUnknown p/ o dash mostrar "verificando…" até o fillMissingAdsets confirmar. */
+    var eff = (camp.effective_status || camp.status || '').toUpperCase();
+    camp._capUnknown = !capped && !sets.length && (eff === 'ACTIVE' || eff === 'WITH_ISSUES');
   }
   /* Aplica o spend_cap na CAMPANHA (centavos). Se a Meta recusar por estar ABAIXO DO MÍNIMO ("must be at least $X"
      / "pelo menos $X" / "too low"), LÊ o mínimo da mensagem e REAPLICA com ele — até 4x. Devolve os centavos
@@ -3810,9 +3824,12 @@ html,body{background:#fbfcfd!important}
     /* DIÁRIO: teto = spend_cap da campanha. VITALÍCIA: teto = limite de gasto do(s) conjunto(s) (_hasCap/_capTotal),
        lido direto da Meta -> selo NUNCA falso; some quando o teto sobe p/ o orçamento total (remover). */
     var isCapped = isLifeC ? !!camp._hasCap : hasCampCap;
+    /* ⚠️ NÃO afirmar "sem limite" sem ter confirmado os conjuntos (vitalícia): se o lote perdeu os conjuntos,
+       mostra "verificando…" (nunca info falsa). O fillMissingAdsets confirma logo e re-renderiza. */
+    var capUnknown = isLifeC && !isCapped && !!camp._capUnknown;
     var tetoTxt = isCapped
       ? ('🔒 LIMITADA · teto ' + fmtUSD((isLifeC ? (camp._capTotalCents || 0) : scNum) / 100))
-      : 'sem limite';
+      : (capUnknown ? '⏳ verificando limite…' : 'sem limite');
     var remembered = getDayCap(camp); /* ultimo "rodar hoje" salvo */
     var preVal = remembered > 0 ? Math.round(remembered) : '';
     var madV = ISOLATED ? 0 : madValueFor(camp);      /* valor efetivo (global ou exceção) */
@@ -3826,7 +3843,7 @@ html,body{background:#fbfcfd!important}
       + '<button class="save-btn" id="cspendbtn_' + i + '" style="padding:4px 8px" title="Aplicar: roda +esse valor hoje e para. Fica salvo p/ amanhã.">&#10003;</button>'
       + '</div>'
       + '<button id="climitnow_' + i + '" style="font-size:10px;font-weight:700;white-space:nowrap;color:#fff;background:#cf5b12;border:none;border-radius:5px;padding:5px 8px;cursor:pointer" title="Para AGORA no gasto atual da campanha — não gasta mais nada">&#9940; Limitar agora</button>'
-      + '<span style="font-size:9px;font-weight:' + (isCapped ? '700' : '400') + ';color:' + (isCapped ? '#cf5b12' : '#656d76') + '" title="' + (isCapped ? 'campanha LIMITADA (teto de gasto aplicado)' : 'sem teto de gasto') + '">' + tetoTxt + '</span>'
+      + '<span style="font-size:9px;font-weight:' + (isCapped ? '700' : (capUnknown ? '700' : '400')) + ';color:' + (isCapped ? '#cf5b12' : (capUnknown ? '#9a6700' : '#656d76')) + '" title="' + (isCapped ? 'campanha LIMITADA (teto de gasto aplicado)' : (capUnknown ? 'não consegui ler os conjuntos ainda — confirmando se tem limite (não confie no “sem limite” até carregar)' : 'sem teto de gasto')) + '">' + tetoTxt + '</span>'
       + (isCapped ? '<button id="cspendrem_' + i + '" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:#fff;background:#cf222e;border:none;border-radius:5px;padding:5px 8px;cursor:pointer" title="Remover o limite de gasto (volta a rodar sem teto)">Remover limite</button>' : '')
       + '</div>';
   }
