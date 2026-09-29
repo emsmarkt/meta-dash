@@ -162,7 +162,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-29.2</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-29.3</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -4004,39 +4004,17 @@ html,body{background:#fbfcfd!important}
 
     var useTk = camp._tk;
     var brDay = function(d){ return d ? String(d).split('-').reverse().join('/') : '?'; };
-    /* ===== CBO: campanha e conjunto ficam TRAVADOS na mesma data (end_time do conjunto <= stop_time da
-       campanha E stop_time da campanha <= maior end_time dos conjuntos). Pra ESTENDER (data pra frente, diario
-       MENOR) tem que subir o TETO primeiro: CAMPANHA -> depois CONJUNTOS. Pra ENCURTAR (data pra tras, diario
-       MAIOR): CONJUNTOS primeiro -> depois CAMPANHA. A ordem fixa antiga (conjuntos primeiro) fazia a Meta
-       cortar no teto e "nao mudar nada" ao estender. SUCESSO = escrita ACEITA (200), mesmo que o read-back
-       demore a refletir (a Meta aceita o POST e propaga em ~1 min). */
-    var oldDay = camp.stop_time ? dayOf(camp.stop_time) : null;
-    var extend = !oldDay || wantDay > oldDay; /* mover pra FRENTE (estender) */
+    /* ===== ✅ CBO = SÓ A CAMPANHA (à prova de erro). Em CBO o orçamento e o cronograma vivem na CAMPANHA;
+       os conjuntos NÃO têm data própria. Mexer nos conjuntos (end_time) era a fonte de TODO erro: #613
+       (1 call/30s por objeto), "does not support this operation" e "nenhum conjunto ativo". Então mudamos
+       APENAS o stop_time da CAMPANHA — a Meta recalcula o diário (saldo / dias restantes) sozinha. Sem tocar
+       nos conjuntos = sem esses erros. SUCESSO = POST aceito (200); read-back pode propagar em ~1 min. */
     var campRes = null;
-    var doCamp = function(){ return applyCampaignStopTime(camp.id, endTs, useTk, wantDay, function(t){ useTk = t; camp._tk = t; }).then(function(r){ campRes = r; return r; }); };
-    var doSets = function(){ return applyEndToAdsets(camp.id, useTk, endIso, wantDay, function(t){ useTk = t; camp._tk = t; }, camp._adsets); };
-    /* estender: campanha (levanta o teto) -> conjuntos -> RECONFIRMA a campanha SO se havia conjunto EDITAVEL
-       (teto de conjunto a vencer). Em CBO vitalicio (conjuntos sem end_time proprio -> st.total===0) a 2a
-       escrita na campanha e INUTIL e dispara o #613 (1 call/30s por objeto) -> pula. encurtar: conjuntos -> campanha. */
-    var seq = extend
-      ? doCamp().then(doSets).then(function(st){ return (st && st.total > 0) ? doCamp().then(function(){ return st; }) : st; })
-      : doSets().then(function(st){ return doCamp().then(function(){ return st; }); });
-    seq
-      .then(function(st){
-        setTotal = st.total; setOk = st.ok; setFails = st.fails || [];
-        var setUnsup = (st.unsupported || []).length; /* conjuntos que nao editam end_time (CBO -> agenda na campanha) */
-        if (setTotal) report.push('Conjuntos: ' + setOk + '/' + setTotal);
-        if (setUnsup) report.push(setUnsup + ' conjunto(s) sem data própria (CBO — agenda na campanha)');
-        setFails.forEach(function(m){ report.push('  - conjunto -> ' + m); });
-        if (campRes) report.push('Campanha: ' + (campRes.ok ? 'confirmada' : (campRes.postOk ? 'aceita (propagando)' : ('erro: ' + (campRes.err || '?')))));
-
-        /* ERRO REAL (falha a operacao) = erro de POST em conjunto OU no stop_time da campanha. */
-        var realErr = (st.postErrs && st.postErrs.length) || (campRes && !campRes.ok && !campRes.postOk && campRes.err);
-        /* ACEITO = nenhum erro real; a Meta recebeu as escritas (read-back pode demorar ~1 min). */
-        var accepted = !realErr && (setTotal > 0 || (campRes && campRes.postOk));
-        /* CONFIRMADO = read-back ja bateu (conjuntos na data E/OU campanha na data). */
-        var confirmed = (setTotal > 0 && setOk >= setTotal) || (campRes && campRes.ok);
-
+    applyCampaignStopTime(camp.id, endTs, useTk, wantDay, function(t){ useTk = t; camp._tk = t; })
+      .then(function(r){
+        campRes = r;
+        var accepted = campRes && (campRes.ok || campRes.postOk); /* 200 aceito (read-back pode demorar) */
+        var confirmed = campRes && campRes.ok;                     /* read-back já bateu na data nova */
         if (accepted) {
           camp.stop_time = endTs; /* display: campanha passa a valer a nova data */
           if (btn) { btn.textContent = confirmed ? 'Aplicado!' : 'Aplicando…'; btn.style.background = '#1a7f37'; btn.style.borderColor = '#1a7f37'; }
@@ -4045,26 +4023,21 @@ html,body{background:#fbfcfd!important}
           var _actH = fromRule ? camp._sugAction : ('Ajuste manual de termino' + (histDailyNew ? ' (~$' + Math.round(histDailyNew) + '/dia)' : ''));
           logRuleHist(camp, _sigH, _actH, { dailyOld: histDailyOld > 0 ? histDailyOld : null, dailyNew: histDailyNew, endOld: histEndOld, endNew: dateVal });
           notifyOk('Aplicado em "' + camp.name + '"',
-            'Término ' + brDay(dateVal) + (setTotal ? (' · ' + setOk + '/' + setTotal + ' conjuntos') : '') + (histDailyNew ? ' · diário ~$' + Math.round(histDailyNew) : '') + (confirmed ? '' : ' · a Meta pode levar ~1 min pra refletir'));
+            'Término ' + brDay(dateVal) + (histDailyNew ? ' · diário ~$' + Math.round(histDailyNew) : '') + (confirmed ? '' : ' · a Meta pode levar ~1 min pra refletir'));
           if (curTab === 'orc') renderOrc();
           if (curTab === 'hist') renderHist();
           renderCBO();
           setTimeout(function() { var b2 = document.getElementById('csavebtn_'+i); if (b2) { b2.disabled = false; b2.textContent = 'Aplicar'; b2.style.background = ''; b2.style.borderColor = ''; } }, 3000);
           return;
         }
-
-        /* ERRO REAL -> botao vermelho + aviso. */
+        /* ERRO REAL no stop_time da campanha -> botao vermelho + aviso com o erro exato da Meta. */
         if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#cf222e'; btn.style.borderColor = '#cf222e'; }
         setTimeout(function() { if (btn) { btn.textContent = 'Aplicar'; btn.style.background = ''; btn.style.borderColor = ''; } }, 4000);
-        var tokenBad = /application has been deleted|validating application|access token|session.*expired|OAuth|code 190/i.test(report.join(' '));
-        if (setTotal === 0 && !(campRes && campRes.postOk)) {
-          notifyErr('Nenhum conjunto ativo em "' + camp.name + '"',
-            'Não achei conjunto com anúncio ativo p/ mudar a data (ou a Meta cortou a busca). Recarregue as campanhas e tente de novo.' + (tokenBad ? ' TOKEN INVÁLIDO: gere um novo em Tokens.' : ''));
-        } else {
-          var em = (st.postErrs && st.postErrs[0]) || (campRes && campRes.err) || '';
-          notifyErr('Erro ao aplicar data em "' + camp.name + '"',
-            'A Meta recusou a escrita. ' + em + ' Clique Aplicar de novo.' + (tokenBad ? ' TOKEN INVÁLIDO.' : ''));
-        }
+        var em = (campRes && campRes.err) || '';
+        var tokenBad = /application has been deleted|validating application|access token|session.*expired|OAuth|code 190/i.test(em);
+        var rateLtd = /request limit|rate limit|#?17\b|#?613|too many calls|calls to this api/i.test(em);
+        notifyErr('Erro ao aplicar data em "' + camp.name + '"',
+          'A Meta recusou mudar o término. ' + em + (rateLtd ? ' (limite momentâneo da conta — espere ~30s e clique de novo)' : ' Clique Aplicar de novo.') + (tokenBad ? ' TOKEN INVÁLIDO: gere um novo em Tokens.' : ''));
       })
       .catch(function(e) {
         if (btn) { btn.disabled = false; btn.textContent = 'Erro!'; btn.style.background = '#cf222e'; btn.style.borderColor = '#cf222e'; }
