@@ -162,7 +162,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-29.5</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-09-29.6</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -3403,20 +3403,25 @@ html,body{background:#fbfcfd!important}
                 var verified = 0; Object.keys(wantById).forEach(function(id){ var got = byId[id] ? (+byId[id].lifetime_spend_cap || 0) : 0; if (got > 0 && Math.abs(got - wantById[id]) <= 300) verified++; });
                 if (!camp._hasCap || !verified) { notifyErr('Meta NÃO gravou o limite de "' + camp.name + '"', 'confirmei no gerenciador e o teto NÃO mudou. Tente de novo.'); renderCBO(); restore(); return; }
                 var effTot = Math.round((camp._capTotalCents || 0) / 100);
-                /* "LIMITAR AGORA": se a Meta forçou um mínimo ACIMA do gasto atual, o teto NÃO para a campanha agora
-                   → avisa e oferece PAUSAR (único jeito de parar de vez), conforme combinado. */
+                /* "LIMITAR AGORA": se a Meta forçou um mínimo ACIMA do gasto atual, NÃO para agora. Em vez de
+                   pausar, SUGERE aplicar o MÍNIMO da Meta como limite (pedido do usuário). OK = mantém o mínimo
+                   (já aplicado nos conjuntos ATIVOS); Cancelar = remove o teto (sobe p/ o orçamento). */
                 if (isStop && effTot > (sumAct * 1.1 + 5)) {
                   renderCBO();
-                  if (confirm('A Meta NÃO deixou travar "' + camp.name + '" no gasto atual.\nO mínimo que ela aceita é ~$' + effTot.toLocaleString('pt-BR') + ', mas você gastou só ~$' + Math.round(sumAct).toLocaleString('pt-BR') + ' → com esse teto a campanha NÃO para agora.\n\nQuer PAUSAR a campanha agora pra parar de vez? (você reativa quando quiser)')) {
-                    return postForm(camp.id, useTk, { status: 'PAUSED' }).then(function(){
-                      camp.status = 'PAUSED'; camp.effective_status = 'PAUSED';
-                      notifyOk('PAUSOU "' + camp.name + '"', 'A Meta não deixava travar no gasto atual (mínimo $' + effTot + '), então pausei p/ parar de vez. Reative quando quiser.');
-                      try { logRuleHist(camp, 'PAUSAR', 'Parar agora (Meta não deixou teto baixo — pausada)', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch(e){}
-                      closeCboDetail(); renderCBO();
-                    }).catch(function(e){ notifyErr('Erro ao pausar "' + camp.name + '"', (e && e.message) ? e.message : String(e)); restore(); });
+                  if (confirm('Não dá pra travar "' + camp.name + '" exatamente no gasto atual (~$' + Math.round(sumAct).toLocaleString('pt-BR') + ').\nA Meta exige um limite MÍNIMO de ~$' + effTot.toLocaleString('pt-BR') + ' (nos conjuntos ativos).\n\nAplicar esse MÍNIMO ($' + effTot.toLocaleString('pt-BR') + ') como limite de gasto? A campanha para ao chegar nele.\n(Cancelar = remove o limite, segue sem teto.)')) {
+                    if (!isStop && addX > 0) { try { localStorage.setItem(daycapKey(camp), String(addX)); } catch(e){} }
+                    notifyOk('Limite MÍNIMO aplicado em "' + camp.name + '"', 'A Meta não deixa travar em $' + Math.round(sumAct) + '. Apliquei o mínimo dela: ~$' + effTot + ' (conjuntos ativos). A campanha para ao chegar nesse valor.');
+                    try { logRuleHist(camp, 'LIMITAR_GASTO', 'Limite mínimo da Meta (conj ~$' + effTot + ')', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch(e){}
+                    closeCboDetail(); renderCBO();
+                    return;
                   }
-                  notifyOk('Teto aplicado em "' + camp.name + '"', 'Limite do(s) conjunto(s): ~$' + effTot + ' (mínimo da Meta). NÃO para agora — use Pausar se quiser parar de vez.');
-                  return;
+                  /* Cancelou -> REMOVE o teto: sobe o lifetime_spend_cap dos conjuntos ATIVOS p/ o orçamento total. */
+                  return Promise.all(act.map(function(s){ return capAdset(useTk, s.id, lbCents).catch(function(){}); })).then(function(){
+                    (camp._adsets || []).forEach(function(s){ if (act.indexOf(s) >= 0) s.lifetime_spend_cap = lbCents; });
+                    recomputeLifeCap(camp);
+                    notifyOk('Limite NÃO aplicado em "' + camp.name + '"', 'Você cancelou. Removi o teto (subiu p/ o orçamento total) — campanha segue sem limite.');
+                    closeCboDetail(); renderCBO();
+                  });
                 }
                 if (!isStop && addX > 0) { try { localStorage.setItem(daycapKey(camp), String(addX)); } catch(e){} }
                 notifyOk((isStop ? 'PAROU' : 'Limite (vitalícia) em') + ' "' + camp.name + '"', 'Limite de gasto do(s) conjunto(s): ~$' + effTot + ' — Meta confirmou' + (fail.length ? (' · ' + fail.length + ' conjunto(s) falhou') : '') + '. Orçamento intacto.' + (isStop ? '' : ' · salvo p/ amanhã'));
@@ -3440,19 +3445,22 @@ html,body{background:#fbfcfd!important}
           if (ok) {
             camp.spend_cap = String(got);
             var gotUsd = got / 100;
-            /* "PARAR AGORA": se a Meta forçou um teto mínimo ACIMA do gasto atual, não para agora → oferece PAUSAR. */
+            /* "PARAR AGORA": se a Meta forçou um teto mínimo ACIMA do gasto atual, não para agora. Em vez de pausar,
+               SUGERE aplicar o MÍNIMO da Meta como limite. OK = mantém o mínimo; Cancelar = remove o teto. */
             if (isStop && gotUsd > (campSpend * 1.1 + 5)) {
               renderCBO();
-              if (confirm('A Meta NÃO deixou travar "' + camp.name + '" no gasto atual.\nO mínimo aceito é ~$' + Math.round(gotUsd).toLocaleString('pt-BR') + ', mas você gastou só ~$' + Math.round(campSpend).toLocaleString('pt-BR') + ' → com esse teto a campanha NÃO para agora.\n\nQuer PAUSAR a campanha agora pra parar de vez? (reative quando quiser)')) {
-                return postForm(camp.id, useTk, { status: 'PAUSED' }).then(function(){
-                  camp.status = 'PAUSED'; camp.effective_status = 'PAUSED';
-                  notifyOk('PAUSOU "' + camp.name + '"', 'A Meta não deixava travar no gasto atual (mínimo $' + Math.round(gotUsd) + '), então pausei p/ parar de vez.');
-                  try { logRuleHist(camp, 'PAUSAR', 'Parar agora (Meta não deixou teto baixo — pausada)', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch(e){}
-                  closeCboDetail(); renderCBO();
-                }).catch(function(e){ notifyErr('Erro ao pausar "' + camp.name + '"', (e && e.message) ? e.message : String(e)); restore(); });
+              if (confirm('Não dá pra travar "' + camp.name + '" exatamente no gasto atual (~$' + Math.round(campSpend).toLocaleString('pt-BR') + ').\nA Meta exige um teto MÍNIMO de ~$' + Math.round(gotUsd).toLocaleString('pt-BR') + '.\n\nAplicar esse MÍNIMO ($' + Math.round(gotUsd).toLocaleString('pt-BR') + ') como limite de gasto? A campanha para ao chegar nele.\n(Cancelar = remove o limite, segue sem teto.)')) {
+                notifyOk('Limite MÍNIMO aplicado em "' + camp.name + '"', 'A Meta não deixa travar em $' + Math.round(campSpend) + '. Apliquei o mínimo dela: $' + Math.round(gotUsd) + '. A campanha para ao chegar nesse valor.');
+                try { logRuleHist(camp, 'LIMITAR_GASTO', 'Limite mínimo da Meta (teto campanha $' + Math.round(gotUsd) + ')', { dailyOld: null, dailyNew: null, endOld: null, endNew: null }); } catch(e){}
+                closeCboDetail(); renderCBO();
+                return;
               }
-              notifyOk('Teto aplicado em "' + camp.name + '"', 'Teto da campanha: $' + Math.round(gotUsd) + ' (mínimo da Meta). NÃO para agora — use Pausar se quiser parar de vez.');
-              return;
+              /* Cancelou -> REMOVE o teto: spend_cap volta ao sentinela "sem limite". */
+              return postForm(camp.id, useTk, { spend_cap: MAD_NOCAP }).then(function(){
+                camp.spend_cap = String(MAD_NOCAP); setCapMark(camp.id, false); camp._hasCap = false;
+                notifyOk('Limite NÃO aplicado em "' + camp.name + '"', 'Você cancelou. Removi o teto — campanha segue sem limite.');
+                closeCboDetail(); renderCBO();
+              }).catch(function(e){ notifyErr('Erro ao remover o teto de "' + camp.name + '"', (e && e.message) ? e.message : String(e)); restore(); });
             }
             if (!isStop && addX > 0) { try { localStorage.setItem(daycapKey(camp), String(addX)); } catch(e){} }
             notifyOk((isStop ? 'PAROU' : 'Limite aplicado em') + ' "' + camp.name + '"', 'Teto da campanha: $' + Math.round(got/100) + ' — Meta confirmou' + (bumped ? ' (a Meta exigiu esse mínimo)' : '') + (isStop ? '' : ' · salvo p/ amanhã'));
