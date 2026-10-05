@@ -162,7 +162,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-10-03.1</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-10-05.1</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -1583,9 +1583,9 @@ html,body{background:#fbfcfd!important}
       /* SO contas com GASTO nos ultimos 7 dias (gasto 0 nao entra) — dash muito mais rapido e sem rate limit. */
       var accounts = Object.values(map).filter(function(a){
         var sp = 0; try { sp = (a.insights && a.insights.data && a.insights.data[0]) ? (parseFloat(a.insights.data[0].spend) || 0) : 0; } catch(e){}
-        a._sp7d = sp; return sp > 0 && acctAllowed(a); /* so contas c/ gasto 7d E dentro do filtro (mais rapido) */
+        a._sp7d = sp; return (sp > 0 || a.account_status === 1) && acctAllowed(a); /* conta c/ gasto 7d OU ATIVA (p/ pegar campanha ativa de conta nova/parada que não gastou ainda) */
       });
-      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#cf222e">Nenhuma conta com gasto nos ultimos 7 dias.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
+      if (!accounts.length) { document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld" style="color:#cf222e">Nenhuma conta ativa ou com gasto nos ultimos 7 dias.</td></tr>'; if (spinEl) spinEl.style.display='none'; return; }
       document.getElementById('cboTbody').innerHTML = '<tr><td colspan="26" class="ld"><span class="spin"></span>Buscando campanhas CBO em '+accounts.length+' contas...</td></tr>';
       var camps = [];
       var idx = 0;
@@ -1597,7 +1597,13 @@ html,body{background:#fbfcfd!important}
             if (c._acctStatus === 1) keepAcct[c._acctId] = true;
             else if (((c.effective_status||c.status||'').toUpperCase())==='ACTIVE') keepAcct[c._acctId] = true;
           });
-          var filtered = camps.filter(function(c){ return keepAcct[c._acctId]; });
+          var filtered = camps.filter(function(c){
+            if (!keepAcct[c._acctId]) return false;
+            /* Conta SEM gasto nos últimos 7d (entrou só por estar ATIVA) -> mostra SÓ campanha ATIVA, p/ não
+               encher a aba de campanhas PAUSADAS de contas paradas. Conta COM gasto 7d mostra tudo (ativa+pausada). */
+            if ((c._acctSp7d || 0) <= 0 && (c.effective_status||c.status||'').toUpperCase() !== 'ACTIVE') return false;
+            return true;
+          });
           /* 🔑 DEDUP por ID da campanha: evita GASTO DUPLICADO quando a paginação (fjPaged) ou tokens com acesso
              à mesma conta trazem a MESMA campanha 2x (linha repetida + total dobrado). Fica só a 1ª ocorrência. */
           var _seenCamp = {}; filtered = filtered.filter(function(c){ if (!c || !c.id) return false; if (_seenCamp[c.id]) return false; _seenCamp[c.id] = true; return true; });
@@ -1622,7 +1628,7 @@ html,body{background:#fbfcfd!important}
               var nameOk = ISOLATED ? (nu.indexOf('SALE') >= 0) : (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0);
               return !!c.name && nameOk && nu.indexOf('SUBSTITUIDA') < 0 && nu.indexOf('MORTA') < 0 && (!!c.lifetime_budget || !!c.daily_budget);
             }).forEach(function(c) {
-              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; c._acctOffset = acc.timezone_offset_hours_utc; camps.push(c);
+              c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; c._acctOffset = acc.timezone_offset_hours_utc; c._acctSp7d = acc._sp7d || 0; camps.push(c);
             });
           }).catch(function(){});
         })).then(nextBatch);
