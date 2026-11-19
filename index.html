@@ -167,7 +167,7 @@ html,body{background:#fbfcfd!important}
 <div id="mdb">
   <div id="alertBox" class="alert-box" style="display:none"></div>
   <div class="hdr">
-    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-10-15.1</span></h1>
+    <h1><span class="dot"></span>Meta Ads &mdash; Painel <span id="appVer" style="font-size:11px;color:#656d76;font-weight:400;background:#eef1f5;border:1px solid #e4e8ee;border-radius:10px;padding:1px 8px;margin-left:4px" title="Versão do painel — se estiver diferente da que o Emerson passou, dê Ctrl+Shift+R">v2026-11-06.1</span></h1>
     <div class="hdr-r">
       <div class="tabs">
         <button class="tab-btn on" data-tab="contas">Contas</button>
@@ -1311,8 +1311,9 @@ html,body{background:#fbfcfd!important}
           var sales = parseInt(row['convtype'+pType]) || 0;
           if (!sales) sales = parseInt(row.approved) || 0; /* algumas contas usam 'approved' p/ vendas */
           var ic = parseInt(row['convtype'+icType]) || 0;
-          /* Faturamento = coluna "Revenue" do RedTrack, DIRETO (sem multiplicar). Fallbacks defensivos. */
-          var rev = parseFloat(row.revenue) || parseFloat(row['revenuetype'+pType]) || parseFloat(row.total_revenue) || 0;
+          /* Faturamento = RECEITA REAL VARIÁVEL do RedTrack. O campo `revenue` vem SEMPRE 0 — o valor real
+             está em total_revenue / revenuetype{N}. Por isso lê esses PRIMEIRO (sem multiplicar, sem fixo). */
+          var rev = parseFloat(row.total_revenue) || parseFloat(row['revenuetype'+pType]) || parseFloat(row.revenue) || 0;
           var cost = pickNum(row, ['cost','total_cost','spend','ad_cost']); /* custo do RedTrack em R$ */
           var conv = { sales: sales, ic: ic, revenue: rev, cost: cost, src: 'rt' };
           ['sub3','campaign_id','source_campaign_id','rt_campaign_id','fb_campaign_id','id'].forEach(function(k){
@@ -1367,7 +1368,7 @@ html,body{background:#fbfcfd!important}
           if (row.sub3 == null || row.sub3 === '') return;
           var sales = parseInt(row['convtype'+pType]) || parseInt(row.approved) || 0;
           var cost = 0; ['cost','total_cost','spend','ad_cost'].forEach(function(k){ if (!cost && row[k]!=null && row[k]!=='') cost = parseFloat(row[k])||0; });
-          var rev = parseFloat(row.revenue) || parseFloat(row['revenuetype'+pType]) || parseFloat(row.total_revenue) || 0; /* receita REAL (USD) */
+          var rev = parseFloat(row.total_revenue) || parseFloat(row['revenuetype'+pType]) || parseFloat(row.revenue) || 0; /* receita REAL VARIÁVEL (USD) — revenue vem 0 */
           by[String(row.sub3)] = { sales: sales, cost: cost, revenue: rev };
         });
         camps.forEach(function(c) {
@@ -1639,9 +1640,13 @@ html,body{background:#fbfcfd!important}
               /* Inclui CBO + TESTE (p/ os filtros da aba). ABO tem aba propria. Exige orcamento no nivel da CAMPANHA
                  — vitalicio OU diario. As de orcamento DIARIO entram so p/ VISUALIZAR (sem regra; o worker tbm as
                  ignora, pois exige lifetime_budget). */
-              /* Nome elegivel: instancia principal -> CBO/TESTE; instancia isolada -> SALE/SALES (indexOf('SALE') pega os dois). */
-              var nameOk = ISOLATED ? (nu.indexOf('SALE') >= 0) : (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0);
-              return !!c.name && nameOk && nu.indexOf('SUBSTITUIDA') < 0 && nu.indexOf('MORTA') < 0 && (!!c.lifetime_budget || !!c.daily_budget);
+              /* Nome elegivel: instancia principal -> CBO/TESTE; instancia isolada (Dash 2) -> campanhas de VENDAS.
+                 (06/11: contas novas com campanha de vendas nomeada SEM "SALE" nao apareciam. Agora pega pelo
+                 OBJETIVO de vendas tambem — OUTCOME_SALES/CONVERSIONS/catalogo — alem de SALE/SALES/VENDAS no nome.) */
+              var _saleObj = ['OUTCOME_SALES','CONVERSIONS','PRODUCT_CATALOG_SALES'].indexOf((c.objective||'').toUpperCase()) >= 0;
+              var nameOk = ISOLATED ? (nu.indexOf('SALE') >= 0 || nu.indexOf('VENDAS') >= 0 || _saleObj) : (nu.indexOf('CBO') >= 0 || nu.indexOf('TESTE') >= 0);
+              /* Dash 2 (ISOLATED) NAO exige orcamento na campanha (pode ser ABO); so a instancia principal exige. */
+              return !!c.name && nameOk && nu.indexOf('SUBSTITUIDA') < 0 && nu.indexOf('MORTA') < 0 && (ISOLATED || !!c.lifetime_budget || !!c.daily_budget);
             }).forEach(function(c) {
               c._accountName = acc.name; c._tk = acc._tk; c._acctStatus = acc.account_status; c._acctId = acc.id; c._acctOffset = acc.timezone_offset_hours_utc; c._acctSp7d = acc._sp7d || 0; camps.push(c);
             });
@@ -3103,6 +3108,7 @@ html,body{background:#fbfcfd!important}
       + '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">'
       +   '<button class="pill on" data-detmode="ad" data-i="'+i+'">Por anúncio</button>'
       +   '<button class="pill" data-detmode="country" data-i="'+i+'">Por país</button>'
+      +   (ISOLATED ? '<button class="pill" data-detmode="hour" data-i="'+i+'">Por hora</button>' : '')
       +   '<span style="font-size:10px;color:#57606a">métricas do Meta no período selecionado</span>'
       + '</div>'
       + '<div id="cbodet_'+i+'" style="font-size:12px;overflow-x:auto"><span class="spin"></span> carregando…</div>'
@@ -3126,6 +3132,39 @@ html,body{background:#fbfcfd!important}
     var _pd = periodDates(), rangeParam;
     if (_pd) rangeParam = 'time_range=' + encodeURIComponent(JSON.stringify({ since: _pd.since, until: _pd.until }));
     else { var sD = new Date(); sD.setMonth(sD.getMonth()-36); rangeParam = 'time_range=' + encodeURIComponent(JSON.stringify({ since: sD.toISOString().slice(0,10), until: new Date().toISOString().slice(0,10) })); }
+    /* ⏰ POR HORA (só Dash 2): gasto por hora do dia em SÃO PAULO (GMT-3). A Meta devolve a hora no fuso DA CONTA
+       (breakdown advertiser_time_zone); converto p/ SP: spHora = (horaConta - offsetConta - 3) mod 24. Conta já em
+       -3 (SP) → sem deslocamento. Soma no período em 24 baldes (histograma por hora do dia). */
+    if (mode === 'hour') {
+      var off = (camp._acctOffset == null) ? -3 : Number(camp._acctOffset);
+      var hUrl = API + '/' + camp.id + '/insights?time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&fields=spend&' + rangeParam + '&limit=500&access_token=' + tk;
+      fjRetry(hUrl).then(function(d){
+        if (d && d.error) { box.innerHTML = '<span style="color:#cf222e">Erro da Meta: ' + (d.error.message||'') + '</span>'; return; }
+        var rows = (d && d.data) || [];
+        if (!rows.length) { box.innerHTML = '<span style="color:#57606a">Sem dados no período.</span>'; return; }
+        var buckets = []; for (var bi=0;bi<24;bi++) buckets.push(0);
+        rows.forEach(function(r){
+          var hb = r.hourly_stats_aggregated_by_advertiser_time_zone || '';
+          var ah = parseInt(hb.slice(0,2)); if (isNaN(ah)) return;
+          var sp = ((ah - off - 3) % 24 + 24) % 24;
+          buckets[sp] += parseFloat(r.spend) || 0;
+        });
+        var maxv = Math.max.apply(null, buckets) || 1;
+        var tot = buckets.reduce(function(a,b){ return a+b; }, 0);
+        var topH = buckets.indexOf(maxv);
+        var body = buckets.map(function(v, h){
+          var pct = Math.round(v / maxv * 100);
+          var hh = ('0'+h).slice(-2);
+          var isTop = v > 0 && h === topH;
+          return '<tr'+(isTop?' style="background:#eef6ff"':'')+'><td style="text-align:left;font-weight:600;white-space:nowrap">'+hh+'h</td>'
+            + '<td style="padding:3px 6px;width:99%"><div style="background:'+(isTop?'#1a7f37':'#2563eb')+';height:12px;border-radius:3px;width:'+pct+'%;min-width:'+(v>0?3:0)+'px"></div></td>'
+            + '<td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums">'+(v>0?fmtUSD(v):'—')+'</td></tr>';
+        }).join('');
+        box.innerHTML = '<table class="det-tbl" style="width:100%"><thead><tr><th style="text-align:left">Hora (SP)</th><th>Gasto</th><th style="text-align:right">$</th></tr></thead><tbody>'+body+'</tbody></table>'
+          + '<div style="font-size:10px;color:#57606a;margin-top:4px">Gasto por hora do dia em <b>São Paulo (GMT-3)</b>, somado no período selecionado. Total: '+fmtUSD(tot)+' · pico às '+('0'+topH).slice(-2)+'h.</div>';
+      }).catch(function(e){ box.innerHTML = '<span style="color:#cf222e">Erro: ' + ((e&&e.message)||e) + '</span>'; });
+      return;
+    }
     /* IC (InitiateCheckout) vem do PRÓPRIO Meta (actions) — postback não manda IC. */
     var icFields = ',actions';
     var url = (mode === 'country')
@@ -3841,8 +3880,9 @@ html,body{background:#fbfcfd!important}
     var BATCH = 10;          /* conjuntos por lote */
     var BATCH_DELAY = 2500;  /* ms entre lotes (evita #17 da conta) */
     var RETRY_WAIT = 32000;  /* ms entre rodadas quando houve #613 (passa dos 30s por objeto) */
-    var SOFT_WAIT = 10000;   /* ms entre rodadas quando foi só #17/rede (reseta mais rápido) */
-    var MAX_ROUNDS = 5;      /* tentativas totais por conjunto */
+    var ACCT_WAIT = 70000;   /* ms entre rodadas quando foi #17 (limite DA CONTA) — leva ~1min p/ liberar */
+    var SOFT_WAIT = 10000;   /* ms entre rodadas p/ rede/outros (reseta rápido) */
+    var MAX_ROUNDS = 6;      /* tentativas totais por conjunto */
     var st = { total: 0, ok: 0, fails: [], postErrs: [], stale: [], unsupported: [], rate: [], accepted: true, rounds: 0 };
     var useTk = tk;
     var skipIds = {}; /* conjuntos que NAO aceitam end_time (CBO lifetime: agenda so na campanha) -> nao re-tenta */
@@ -3928,14 +3968,17 @@ html,body{background:#fbfcfd!important}
             st.ok = writable.length - stillPend.length;
             if (!stillPend.length) return;              /* todos pegaram */
             if (st.rounds >= MAX_ROUNDS) return;         /* desistiu após MAX rodadas */
-            var had613 = /#?613/.test(lastErrs.join(' '));
-            var w = had613 ? RETRY_WAIT : SOFT_WAIT;
+            var errJoin = lastErrs.join(' ');
+            var had613 = /#?613/.test(errJoin);
+            var had17 = /#?17\b|request limit|excessiva|too many calls|calls to this api/i.test(errJoin);
+            var w = had613 ? RETRY_WAIT : (had17 ? ACCT_WAIT : SOFT_WAIT);
+            var reason = had17 ? ' (limite da conta)' : '';
             var secs = Math.round(w / 1000);
             /* conta regressiva no botão pra o usuário saber que está trabalhando */
             var startT = Date.now();
             function tick(){
               var left = Math.max(0, secs - Math.round((Date.now() - startT) / 1000));
-              prog('Faltam ' + stillPend.length + ' — re-tentar em ' + left + 's…');
+              prog('Faltam ' + stillPend.length + ' — re-tentar em ' + left + 's' + reason + '…');
               if (left > 0) return wait(1000).then(tick);
             }
             return tick().then(function(){ return doRound(stillPend); });
